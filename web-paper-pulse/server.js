@@ -620,13 +620,29 @@ async function translateWithGoogle(text, target) {
     : '';
 }
 
+async function translateWithMyMemory(text, target) {
+  const langpair = target === 'zh-CN' ? 'en|zh-CN' : `en|${target}`;
+  const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
+  const data = await requestJson(url, { timeout: 22000 });
+  if (Number(data.responseStatus || 200) >= 400) throw new Error(data.responseDetails || 'MyMemory translation failed');
+  return data.responseData && data.responseData.translatedText ? data.responseData.translatedText : '';
+}
+
 async function translateText(text, target = 'zh-CN') {
   const chunks = splitTextForTranslation(text);
-  const provider = process.env.LIBRETRANSLATE_URL ? 'libretranslate' : 'google';
+  let provider = process.env.LIBRETRANSLATE_URL ? 'libretranslate' : 'google';
   const translated = [];
   for (const chunk of chunks) {
-    if (provider === 'libretranslate') translated.push(await translateWithLibre(chunk, target));
-    else translated.push(await translateWithGoogle(chunk, target));
+    if (provider === 'libretranslate') {
+      translated.push(await translateWithLibre(chunk, target));
+    } else {
+      try {
+        translated.push(await translateWithGoogle(chunk, target));
+      } catch (error) {
+        provider = 'mymemory';
+        translated.push(await translateWithMyMemory(chunk, target));
+      }
+    }
   }
   return { provider, translatedText: translated.join('\n\n') };
 }
@@ -754,7 +770,7 @@ function keyStatus() {
     openalexMailto: Boolean(process.env.OPENALEX_MAILTO),
     core: Boolean(process.env.CORE_API_KEY),
     semantic: Boolean(process.env.SEMANTIC_SCHOLAR_API_KEY),
-    translationProvider: process.env.LIBRETRANSLATE_URL ? 'LibreTranslate' : 'Google Translate fallback',
+    translationProvider: process.env.LIBRETRANSLATE_URL ? 'LibreTranslate' : 'Google Translate + MyMemory fallback',
     sync: true,
     customSyncSecret: Boolean(process.env.SYNC_SECRET)
   };
