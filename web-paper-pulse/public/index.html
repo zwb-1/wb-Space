@@ -57,6 +57,12 @@
             <label><input type="checkbox" name="sources" value="core"> CORE</label>
             <label><input type="checkbox" name="sources" value="semantic"> Semantic Scholar</label>
           </fieldset>
+          <fieldset class="sources-field compact-fieldset">
+            <legend>质量筛选</legend>
+            <label><input id="quality-filter-input" type="checkbox" checked> 仅保留 SCI Q2 及以上</label>
+            <label><input id="include-preprints-input" type="checkbox" checked> 保留预印本</label>
+            <label><input id="require-known-metrics-input" type="checkbox"> 严格隐藏未知指标</label>
+          </fieldset>
           <div class="form-actions">
             <button class="primary-button" type="submit">刷新</button>
             <button class="ghost-button" id="clear-search" type="button">清空</button>
@@ -80,7 +86,7 @@
         <div class="list-tools">
           <label class="field inline-field">
             <span>本页过滤</span>
-            <input id="local-filter-input" type="search" placeholder="标题、作者、关键词">
+            <input id="local-filter-input" type="search" placeholder="标题、作者、关键词、期刊">
           </label>
           <div class="count-pill" id="paper-count">0 篇</div>
         </div>
@@ -122,31 +128,92 @@
         <div class="panel-head">
           <div>
             <p class="eyebrow">Profile</p>
-            <h2>个人偏好</h2>
+            <h2>个人偏好与同步</h2>
           </div>
           <button class="primary-button" id="save-settings" type="button">保存</button>
         </div>
         <div class="settings-grid">
-          <label class="field">
-            <span>方向名称</span>
-            <input id="profile-name-input" type="text" value="我的研究方向">
-          </label>
-          <label class="field">
-            <span>关键词</span>
-            <textarea id="include-keywords-input" rows="5"></textarea>
-          </label>
-          <label class="field">
-            <span>排除词</span>
-            <textarea id="exclude-keywords-input" rows="5"></textarea>
-          </label>
-          <div class="key-status" id="key-status"></div>
-          <div class="data-actions">
-            <button class="ghost-button" id="export-data" type="button">导出数据</button>
-            <label class="file-button">
-              导入数据
-              <input id="import-data" type="file" accept="application/json">
+          <section class="settings-block">
+            <h3>账号同步</h3>
+            <div class="sync-grid">
+              <label class="field">
+                <span>账号</span>
+                <input id="sync-username-input" type="text" autocomplete="username" placeholder="例如 zwb">
+              </label>
+              <label class="field">
+                <span>密码</span>
+                <input id="sync-password-input" type="password" autocomplete="current-password" placeholder="至少 6 位">
+              </label>
+            </div>
+            <div class="data-actions">
+              <button class="primary-button" id="sync-login" type="button">登录/创建</button>
+              <button class="ghost-button" id="sync-pull" type="button">拉取云端</button>
+              <button class="ghost-button" id="sync-push" type="button">推送本机</button>
+              <button class="ghost-button" id="sync-logout" type="button">退出</button>
+            </div>
+            <p class="hint-text" id="sync-status">未登录。登录后收藏、笔记、设置、指标表会在电脑和手机间同步。</p>
+          </section>
+
+          <section class="settings-block">
+            <h3>研究偏好</h3>
+            <label class="field">
+              <span>方向名称</span>
+              <input id="profile-name-input" type="text" value="我的研究方向">
             </label>
-          </div>
+            <label class="field">
+              <span>关键词</span>
+              <textarea id="include-keywords-input" rows="5"></textarea>
+            </label>
+            <label class="field">
+              <span>排除词</span>
+              <textarea id="exclude-keywords-input" rows="5"></textarea>
+            </label>
+          </section>
+
+          <section class="settings-block">
+            <h3>影响因子与分区筛选</h3>
+            <div class="sync-grid">
+              <label class="field">
+                <span>最低分区</span>
+                <select id="min-quartile-input">
+                  <option value="Q1">SCI 1区 / Q1</option>
+                  <option value="Q2" selected>SCI 2区 / Q2</option>
+                  <option value="Q3">SCI 3区 / Q3</option>
+                  <option value="Q4">SCI 4区 / Q4</option>
+                </select>
+              </label>
+              <label class="field">
+                <span>最低影响因子</span>
+                <input id="min-impact-factor-input" type="number" min="0" step="0.1" value="0">
+              </label>
+            </div>
+            <div class="check-stack">
+              <label><input id="settings-quality-filter-input" type="checkbox" checked> 开启质量筛选</label>
+              <label><input id="settings-include-preprints-input" type="checkbox" checked> 保留 arXiv/HF 预印本</label>
+              <label><input id="settings-require-known-metrics-input" type="checkbox"> 严格模式：没有指标的期刊也隐藏</label>
+            </div>
+            <div class="data-actions">
+              <label class="file-button">
+                导入指标表
+                <input id="import-metrics" type="file" accept=".json,.csv,text/csv,application/json">
+              </label>
+              <button class="ghost-button" id="download-metrics-template" type="button">下载模板</button>
+              <button class="ghost-button" id="clear-metrics" type="button">清空指标</button>
+            </div>
+            <p class="hint-text" id="metrics-status">已加载 0 条期刊指标。官方 JCR/SCI 分区请导入你自己的授权表。</p>
+          </section>
+
+          <section class="settings-block">
+            <h3>服务状态</h3>
+            <div class="key-status" id="key-status"></div>
+            <div class="data-actions">
+              <button class="ghost-button" id="export-data" type="button">导出数据</button>
+              <label class="file-button">
+                导入数据
+                <input id="import-data" type="file" accept="application/json">
+              </label>
+            </div>
+          </section>
         </div>
       </section>
 
@@ -170,12 +237,13 @@
       </div>
       <div class="paper-actions">
         <button class="icon-button favorite-button" type="button" title="收藏" aria-label="收藏">☆</button>
+        <button class="mini-link translate-card-button" type="button">翻译</button>
         <a class="mini-link pdf-link" target="_blank" rel="noreferrer">PDF</a>
         <a class="mini-link source-link" target="_blank" rel="noreferrer">原文</a>
       </div>
     </article>
   </template>
 
-  <script src="./app.js"></script>
+  <script src="./app-v2.js"></script>
 </body>
 </html>

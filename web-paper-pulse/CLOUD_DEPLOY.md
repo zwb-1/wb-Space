@@ -37,6 +37,9 @@ npm start
 OPENALEX_MAILTO=你的邮箱
 CORE_API_KEY=你的 CORE key
 SEMANTIC_SCHOLAR_API_KEY=你的 Semantic Scholar key
+SYNC_SECRET=一串足够长的随机字符
+LIBRETRANSLATE_URL=你的 LibreTranslate 地址
+LIBRETRANSLATE_API_KEY=你的 LibreTranslate key
 ```
 
 8. Deploy 完成后，打开 Render 给你的公网 URL。
@@ -59,6 +62,6 @@ npm start
 
 ## 注意
 
-- 收藏、评分、笔记目前保存在浏览器本地。电脑和手机会各有一份数据。
-- 如果你想电脑和手机收藏同步，需要后续加数据库和登录。
+- 收藏、评分、笔记可以通过设置页的同步账号在电脑和手机之间同步。
+- Render 免费实例的文件存储可能随重启/重新部署丢失。长期保存建议后续接入数据库。
 - 不要把 `.env` 提交到 GitHub。API Key 应该填到云平台的环境变量里。
