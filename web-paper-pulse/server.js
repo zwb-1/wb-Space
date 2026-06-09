@@ -21,7 +21,9 @@ const SOURCE_LABELS = {
   crossref: 'Crossref',
   pubmed: 'PubMed / PMC',
   core: 'CORE',
-  semantic: 'Semantic Scholar'
+  semantic: 'Semantic Scholar',
+  gscholar: 'Google Scholar',
+  chaoxing: '超星学术'
 };
 
 function loadDotEnv(file) {
@@ -586,6 +588,137 @@ async function searchSemanticScholar(query, maxResults) {
   return (data.data || []).map(normalizeSemanticPaper).filter((paper) => paper.title);
 }
 
+function scholarHeaders() {
+  return {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+    'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8'
+  };
+}
+
+function absoluteUrl(value, base) {
+  try {
+    return new URL(decodeEntities(String(value || '')), base).toString();
+  } catch (error) {
+    return '';
+  }
+}
+
+function extractAttr(html, attr) {
+  const match = String(html || '').match(new RegExp(`${attr}=["']([^"']+)["']`, 'i'));
+  return match ? decodeEntities(match[1]) : '';
+}
+
+function yearFromText(value) {
+  const match = String(value || '').match(/\b(19|20)\d{2}\b/);
+  return match ? match[0] : '';
+}
+
+function fallbackSearchPaper(source, title, query, url) {
+  return normalizePaper({
+    id: `${source}-search-${sha256(`${query}:${url}`).slice(0, 10)}`,
+    source,
+    sourceLabel: SOURCE_LABELS[source],
+    title,
+    summary: `该来源没有稳定公开 API，已生成可点击检索入口。打开原文链接可继续在 ${SOURCE_LABELS[source]} 中查看结果。`,
+    authors: '',
+    publishedAt: '',
+    url,
+    absUrl: url,
+    pdfUrl: '',
+    venueName: SOURCE_LABELS[source],
+    tags: [SOURCE_LABELS[source], '检索入口'],
+    scoreText: ''
+  });
+}
+
+function parseGoogleScholar(html, maxResults) {
+  if (/recaptcha|unusual traffic|not a robot/i.test(html)) {
+    throw new Error('Google Scholar 触发验证码，请稍后重试或打开检索入口');
+  }
+  return String(html || '').split('<div class="gs_ri">').slice(1).map((block, index) => {
+    const titleBlock = (block.match(/<h3[^>]*class="gs_rt"[\s\S]*?<\/h3>/i) || [''])[0];
+    const linkMatch = titleBlock.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    const title = compactText(linkMatch ? linkMatch[2] : titleBlock);
+    const url = absoluteUrl(linkMatch ? linkMatch[1] : '', 'https://scholar.google.com/');
+    const meta = compactText((block.match(/<div class="gs_a">([\s\S]*?)<\/div>/i) || [null, ''])[1]);
+    const summary = compactText((block.match(/<div class="gs_rs">([\s\S]*?)<\/div>/i) || [null, ''])[1]);
+    const cited = compactText((block.match(/(?:被引用次数|Cited by)[：:\s]*(\d+)/i) || [null, ''])[1]);
+    const venuePart = meta.split(' - ')[1] || '';
+    if (!title) return null;
+    return normalizePaper({
+      id: `gscholar-${sha256(url || title).slice(0, 12)}-${index}`,
+      source: 'gscholar',
+      sourceLabel: SOURCE_LABELS.gscholar,
+      title,
+      summary,
+      authors: meta.split(' - ')[0] || '',
+      publishedAt: yearFromText(meta) ? `${yearFromText(meta)}-01-01` : '',
+      url,
+      absUrl: url || `https://scholar.google.com/scholar?hl=zh-CN&q=${encodeURIComponent(title)}`,
+      pdfUrl: /\.pdf(\?|$)/i.test(url) ? url : '',
+      venueName: compactText(venuePart.replace(/\b(19|20)\d{2}\b.*$/, '')),
+      tags: ['Google Scholar'],
+      scoreText: cited ? `${cited} citations` : ''
+    });
+  }).filter(Boolean).slice(0, maxResults);
+}
+
+async function searchGoogleScholar(query, maxResults) {
+  const q = compactText(query || '');
+  if (!q) return [];
+  const url = `https://scholar.google.com/scholar?hl=zh-CN&num=${Math.min(maxResults, 20)}&q=${encodeURIComponent(q)}`;
+  try {
+    const papers = parseGoogleScholar(await requestText(url, { headers: scholarHeaders(), timeout: 24000 }), maxResults);
+    return papers.length ? papers : [fallbackSearchPaper('gscholar', `在 Google Scholar 搜索：${q}`, q, url)];
+  } catch (error) {
+    return [fallbackSearchPaper('gscholar', `在 Google Scholar 搜索：${q}`, q, url)];
+  }
+}
+
+function parseChaoxing(html, maxResults) {
+  const papers = [];
+  const blocks = String(html || '').split(/<li\b|<div\b/i).slice(1);
+  for (const rawBlock of blocks) {
+    const block = `<div ${rawBlock}`;
+    if (!/论文|期刊|article|journal|title|basic_title/i.test(block)) continue;
+    const href = extractAttr(block, 'href');
+    const titleMatch = block.match(/title=["']([^"']{6,220})["']/i) || block.match(/<a\b[^>]*>([\s\S]{6,260}?)<\/a>/i);
+    const title = compactText(titleMatch ? titleMatch[1] : '');
+    if (!title || /javascript:|changeChannel|搜索|检索|超星|href=/i.test(title)) continue;
+    const summary = compactText((block.match(/(?:摘要|简介)[：:]\s*([\s\S]{10,420}?)(?:<|$)/i) || [null, ''])[1]);
+    papers.push(normalizePaper({
+      id: `chaoxing-${sha256(title + href).slice(0, 12)}`,
+      source: 'chaoxing',
+      sourceLabel: SOURCE_LABELS.chaoxing,
+      title,
+      summary,
+      authors: '',
+      publishedAt: yearFromText(block) ? `${yearFromText(block)}-01-01` : '',
+      url: absoluteUrl(href, 'https://qikan.chaoxing.com/'),
+      absUrl: absoluteUrl(href, 'https://qikan.chaoxing.com/'),
+      pdfUrl: '',
+      venueName: '超星学术',
+      tags: ['超星学术'],
+      scoreText: ''
+    }));
+    if (papers.length >= maxResults) break;
+  }
+  return papers;
+}
+
+async function searchChaoxing(query, maxResults) {
+  const q = compactText(query || '');
+  if (!q) return [];
+  const url = `https://qikan.chaoxing.com/search?sw=${encodeURIComponent(q)}`;
+  try {
+    const html = await requestText(url, { headers: scholarHeaders(), timeout: 24000 });
+    const papers = parseChaoxing(html, maxResults);
+    return papers.length ? papers : [fallbackSearchPaper('chaoxing', `在超星学术搜索：${q}`, q, url)];
+  } catch (error) {
+    return [fallbackSearchPaper('chaoxing', `在超星学术搜索：${q}`, q, url)];
+  }
+}
+
 function easyScholarEnabled() {
   return Boolean(
     process.env.EASYSCHOLAR_SECRET_KEY ||
@@ -806,7 +939,9 @@ const SEARCHERS = {
   crossref: (event, max) => searchCrossref(event.query, max),
   pubmed: (event, max) => searchPubMed(event.query, max),
   core: (event, max) => searchCore(event.query, max),
-  semantic: (event, max) => searchSemanticScholar(event.query, max)
+  semantic: (event, max) => searchSemanticScholar(event.query, max),
+  gscholar: (event, max) => searchGoogleScholar(event.query, max),
+  chaoxing: (event, max) => searchChaoxing(event.query, max)
 };
 
 function paperKey(paper) {
@@ -887,6 +1022,34 @@ async function translateWithLibre(text, target) {
   return data.translatedText || '';
 }
 
+async function translateWithMicrosoft(text, target) {
+  const tokenRes = await fetch('https://edge.microsoft.com/translate/auth', {
+    headers: { 'User-Agent': 'Mozilla/5.0 PaperPulseWeb/1.0' },
+    signal: AbortSignal.timeout(18000)
+  });
+  const token = await tokenRes.text();
+  if (!tokenRes.ok || !token) throw new Error(`Microsoft token HTTP ${tokenRes.status}`);
+  const to = target === 'zh-CN' ? 'zh-Hans' : target;
+  const url = `https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to=${encodeURIComponent(to)}&includeSentenceLength=true`;
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 PaperPulseWeb/1.0'
+    },
+    body: JSON.stringify([{ Text: text }]),
+    signal: AbortSignal.timeout(22000)
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(`Microsoft Translate HTTP ${res.status}`);
+  const translated = Array.isArray(data) && data[0] && Array.isArray(data[0].translations)
+    ? data[0].translations.map((item) => item.text || '').join('')
+    : '';
+  if (!translated) throw new Error('Microsoft Translate returned empty text');
+  return translated;
+}
+
 async function translateWithGoogle(text, target) {
   const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(text)}`;
   const data = await requestJson(url, { timeout: 22000 });
@@ -895,31 +1058,76 @@ async function translateWithGoogle(text, target) {
     : '';
 }
 
+async function translateWithLingva(text, target) {
+  const to = target === 'zh-CN' ? 'zh' : target;
+  const defaults = [
+    'https://lingva.ml',
+    'https://lingva.translate.plausibility.cloud',
+    'https://translate.plausibility.cloud'
+  ];
+  const bases = String(process.env.LINGVA_TRANSLATE_URLS || '')
+    .split(',')
+    .map((item) => item.trim().replace(/\/$/, ''))
+    .filter(Boolean)
+    .concat(defaults);
+  let lastError = null;
+  for (const base of Array.from(new Set(bases))) {
+    try {
+      const url = `${base}/api/v1/auto/${encodeURIComponent(to)}/${encodeURIComponent(text)}`;
+      const data = await requestJson(url, { timeout: 18000 });
+      const translated = data.translation || data.translatedText || '';
+      if (translated) return translated;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('Lingva Translate failed');
+}
+
 async function translateWithMyMemory(text, target) {
   const langpair = target === 'zh-CN' ? 'en|zh-CN' : `en|${target}`;
   const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${encodeURIComponent(langpair)}`;
   const data = await requestJson(url, { timeout: 22000 });
-  if (Number(data.responseStatus || 200) >= 400) throw new Error(data.responseDetails || 'MyMemory translation failed');
+  const details = data.responseDetails || '';
+  if (/USED ALL AVAILABLE FREE TRANSLATIONS|QUERY LENGTH LIMIT|quota|limit/i.test(details)) {
+    throw new Error(`MyMemory quota unavailable: ${details}`);
+  }
+  if (Number(data.responseStatus || 200) >= 400) throw new Error(details || 'MyMemory translation failed');
   return data.responseData && data.responseData.translatedText ? data.responseData.translatedText : '';
+}
+
+async function translateChunk(text, target, preferredProvider) {
+  const providers = [];
+  if (preferredProvider === 'libretranslate') providers.push(['libretranslate', translateWithLibre]);
+  providers.push(
+    ['microsoft', translateWithMicrosoft],
+    ['google', translateWithGoogle],
+    ['lingva', translateWithLingva],
+    ['mymemory', translateWithMyMemory]
+  );
+  let lastError = null;
+  for (const [name, translate] of providers) {
+    try {
+      const translated = await translate(text, target);
+      if (translated) return { provider: name, translated };
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('所有免费翻译源暂时不可用');
 }
 
 async function translateText(text, target = 'zh-CN') {
   const chunks = splitTextForTranslation(text);
-  let provider = process.env.LIBRETRANSLATE_URL ? 'libretranslate' : 'google';
+  const providerSet = new Set();
+  const preferredProvider = process.env.LIBRETRANSLATE_URL ? 'libretranslate' : '';
   const translated = [];
   for (const chunk of chunks) {
-    if (provider === 'libretranslate') {
-      translated.push(await translateWithLibre(chunk, target));
-    } else {
-      try {
-        translated.push(await translateWithGoogle(chunk, target));
-      } catch (error) {
-        provider = 'mymemory';
-        translated.push(await translateWithMyMemory(chunk, target));
-      }
-    }
+    const result = await translateChunk(chunk, target, preferredProvider);
+    providerSet.add(result.provider);
+    translated.push(result.translated);
   }
-  return { provider, translatedText: translated.join('\n\n') };
+  return { provider: Array.from(providerSet).join(' + ') || 'none', translatedText: translated.join('\n\n') };
 }
 
 function sanitizeSyncData(data = {}) {
@@ -1048,7 +1256,7 @@ function keyStatus() {
     semantic: Boolean(process.env.SEMANTIC_SCHOLAR_API_KEY),
     easyScholar: easyScholarEnabled(),
     easyScholarMode: easyScholarMode(),
-    translationProvider: process.env.LIBRETRANSLATE_URL ? 'LibreTranslate' : 'Google Translate + MyMemory fallback',
+    translationProvider: process.env.LIBRETRANSLATE_URL ? 'LibreTranslate + Microsoft + Google fallback' : 'Microsoft + Google + Lingva fallback',
     sync: true,
     customSyncSecret: Boolean(process.env.SYNC_SECRET)
   };

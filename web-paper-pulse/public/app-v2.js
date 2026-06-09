@@ -29,7 +29,9 @@ const sourceNames = {
   crossref: 'Crossref',
   pubmed: 'PubMed / PMC',
   core: 'CORE',
-  semantic: 'Semantic Scholar'
+  semantic: 'Semantic Scholar',
+  gscholar: 'Google Scholar',
+  chaoxing: '超星学术'
 };
 
 const state = {

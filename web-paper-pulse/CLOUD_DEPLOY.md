@@ -40,6 +40,7 @@ SEMANTIC_SCHOLAR_API_KEY=你的 Semantic Scholar key
 SYNC_SECRET=一串足够长的随机字符
 LIBRETRANSLATE_URL=你的 LibreTranslate 地址
 LIBRETRANSLATE_API_KEY=你的 LibreTranslate key
+LINGVA_TRANSLATE_URLS=自有 Lingva 镜像，多个用英文逗号分隔（可选）
 EASYSCHOLAR_SECRET_KEY=你的 EasyScholar Open API SecretKey
 EASYSCHOLAR_USERNAME=你的 EasyScholar 登录账号（备用）
 EASYSCHOLAR_PASSWORD=你的 EasyScholar 登录密码（备用）
