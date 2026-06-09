@@ -627,6 +627,7 @@ function fallbackSearchPaper(source, title, query, url) {
     id: `${source}-search-${sha256(`${query}:${url}`).slice(0, 10)}`,
     source,
     sourceLabel: SOURCE_LABELS[source],
+    isSearchEntry: true,
     title,
     summary: `该来源没有稳定公开 API，已生成可点击检索入口。打开原文链接可继续在 ${SOURCE_LABELS[source]} 中查看结果。`,
     authors: '',
@@ -1053,6 +1054,7 @@ async function enrichWithEasyScholar(papers) {
   let lookups = 0;
 
   for (const paper of papers) {
+    if (paper.isSearchEntry) continue;
     const journal = compactText(paper.venueName || '');
     const normalized = normalizeJournalName(journal);
     if (!journal || /arxiv|preprint/i.test(journal) || !normalized) continue;
