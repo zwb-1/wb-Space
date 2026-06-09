@@ -103,6 +103,14 @@ function quartileFromText(value) {
   return '';
 }
 
+function cleanHtmlText(value) {
+  return compactText(String(value || '')
+    .replace(/<font\b[^>]*>/gi, '')
+    .replace(/<\/font>/gi, '')
+    .replace(/<sup\b[^>]*>[\s\S]*?<\/sup>/gi, '')
+    .replace(/<[^>]+>/g, ' '));
+}
+
 function compactMetric(metric) {
   if (!metric) return null;
   return {
@@ -116,6 +124,7 @@ function compactMetric(metric) {
     sciUpSmall: compactText(metric.sciUpSmall || ''),
     sciUpTop: compactText(metric.sciUpTop || ''),
     source: compactText(metric.source || 'EasyScholar'),
+    metricProvider: compactText(metric.metricProvider || 'EasyScholar'),
     updatedAt: metric.updatedAt || new Date().toISOString()
   };
 }
@@ -638,11 +647,13 @@ function parseGoogleScholar(html, maxResults) {
   return String(html || '').split('<div class="gs_ri">').slice(1).map((block, index) => {
     const titleBlock = (block.match(/<h3[^>]*class="gs_rt"[\s\S]*?<\/h3>/i) || [''])[0];
     const linkMatch = titleBlock.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-    const title = compactText(linkMatch ? linkMatch[2] : titleBlock);
+    const title = cleanHtmlText(linkMatch ? linkMatch[2] : titleBlock);
     const url = absoluteUrl(linkMatch ? linkMatch[1] : '', 'https://scholar.google.com/');
-    const meta = compactText((block.match(/<div class="gs_a">([\s\S]*?)<\/div>/i) || [null, ''])[1]);
-    const summary = compactText((block.match(/<div class="gs_rs">([\s\S]*?)<\/div>/i) || [null, ''])[1]);
+    const meta = cleanHtmlText((block.match(/<div class="gs_a">([\s\S]*?)<\/div>/i) || [null, ''])[1]);
+    const summary = cleanHtmlText((block.match(/<div class="gs_rs">([\s\S]*?)<\/div>/i) || [null, ''])[1]);
     const cited = compactText((block.match(/(?:被引用次数|Cited by)[：:\s]*(\d+)/i) || [null, ''])[1]);
+    const pdfMatch = block.match(/<div class="gs_or_ggsm"[\s\S]*?<a\b[^>]*href="([^"]+)"/i);
+    const pdfUrl = absoluteUrl(pdfMatch ? pdfMatch[1] : '', 'https://scholar.google.com/');
     const venuePart = meta.split(' - ')[1] || '';
     if (!title) return null;
     return normalizePaper({
@@ -655,7 +666,7 @@ function parseGoogleScholar(html, maxResults) {
       publishedAt: yearFromText(meta) ? `${yearFromText(meta)}-01-01` : '',
       url,
       absUrl: url || `https://scholar.google.com/scholar?hl=zh-CN&q=${encodeURIComponent(title)}`,
-      pdfUrl: /\.pdf(\?|$)/i.test(url) ? url : '',
+      pdfUrl: pdfUrl || (/\.pdf(\?|$)/i.test(url) ? url : ''),
       venueName: compactText(venuePart.replace(/\b(19|20)\d{2}\b.*$/, '')),
       tags: ['Google Scholar'],
       scoreText: cited ? `${cited} citations` : ''
@@ -666,13 +677,28 @@ function parseGoogleScholar(html, maxResults) {
 async function searchGoogleScholar(query, maxResults) {
   const q = compactText(query || '');
   if (!q) return [];
-  const url = `https://scholar.google.com/scholar?hl=zh-CN&num=${Math.min(maxResults, 20)}&q=${encodeURIComponent(q)}`;
-  try {
-    const papers = parseGoogleScholar(await requestText(url, { headers: scholarHeaders(), timeout: 24000 }), maxResults);
-    return papers.length ? papers : [fallbackSearchPaper('gscholar', `在 Google Scholar 搜索：${q}`, q, url)];
-  } catch (error) {
-    return [fallbackSearchPaper('gscholar', `在 Google Scholar 搜索：${q}`, q, url)];
+  const papers = [];
+  const seen = new Set();
+  const pageSize = 10;
+  const pages = Math.max(1, Math.min(Math.ceil(maxResults / pageSize), 3));
+  const baseUrl = `https://scholar.google.com/scholar?hl=zh-CN&num=${pageSize}&q=${encodeURIComponent(q)}`;
+  for (let page = 0; page < pages && papers.length < maxResults; page += 1) {
+    const url = `${baseUrl}&start=${page * pageSize}`;
+    try {
+      const pagePapers = parseGoogleScholar(await requestText(url, { headers: scholarHeaders(), timeout: 24000 }), pageSize);
+      for (const paper of pagePapers) {
+        const key = paperKey(paper);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        papers.push(paper);
+        if (papers.length >= maxResults) break;
+      }
+      if (pagePapers.length < pageSize) break;
+    } catch (error) {
+      break;
+    }
   }
+  return papers.length ? papers : [fallbackSearchPaper('gscholar', `在 Google Scholar 搜索：${q}`, q, baseUrl)];
 }
 
 function parseChaoxing(html, maxResults) {
@@ -706,14 +732,72 @@ function parseChaoxing(html, maxResults) {
   return papers;
 }
 
+function normalizeChaoxingItem(item, index = 0) {
+  const title = cleanHtmlText(item.basic_title || item.title || '');
+  if (!title) return null;
+  const url = absoluteUrl(item.basic_title_url || item.url || '', 'https://qikan.chaoxing.com/');
+  const keywords = cleanHtmlText(item.basic_keyword || '');
+  const summary = keywords ? `关键词：${keywords}` : cleanHtmlText(item.gbt || item.mla || item.apa || '');
+  const journal = cleanHtmlText(item.basic_sourcename || item.basic_source_name || '');
+  const year = yearFromText(item.basic_date || item.gbt || '');
+  const quote = toNumber(item.quote || item.proc_quote);
+  return normalizePaper({
+    id: `chaoxing-${sha256(url || title).slice(0, 12)}-${index}`,
+    source: 'chaoxing',
+    sourceLabel: SOURCE_LABELS.chaoxing,
+    title,
+    summary,
+    authors: cleanHtmlText(item.basic_creator || ''),
+    publishedAt: year ? `${year}-01-01` : '',
+    url,
+    absUrl: url || `https://qikan.chaoxing.com/search?sw=${encodeURIComponent(title)}`,
+    pdfUrl: '',
+    venueName: journal || '超星学术',
+    issns: item.basic_identifier_1 ? [item.basic_identifier_1] : [],
+    tags: ['超星学术', journal].filter(Boolean),
+    scoreText: quote ? `${quote} citations` : ''
+  });
+}
+
+function parseChaoxingGas(data, maxResults) {
+  const rows = [];
+  const groups = Array.isArray(data && data.data) ? data.data : [];
+  groups.forEach((group) => {
+    const items = group && group.datainfo && Array.isArray(group.datainfo.data) ? group.datainfo.data : [];
+    rows.push(...items);
+  });
+  return rows.map(normalizeChaoxingItem).filter(Boolean).slice(0, maxResults);
+}
+
 async function searchChaoxing(query, maxResults) {
   const q = compactText(query || '');
   if (!q) return [];
+  const gasBase = `https://qikan.chaoxing.com/gas/search?q=${encodeURIComponent(q)}&fields=datainfo`;
+  const sorts = ['', 'yeardesc', 'yearasc', 'citationcount'];
+  const papers = [];
+  const seen = new Set();
+  for (const sort of sorts) {
+    if (papers.length >= maxResults) break;
+    try {
+      const url = sort ? `${gasBase}&isort=${encodeURIComponent(sort)}` : gasBase;
+      const data = await requestChaoxingJson(url, q);
+      for (const paper of parseChaoxingGas(data, maxResults)) {
+        const key = paperKey(paper);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        papers.push(paper);
+        if (papers.length >= maxResults) break;
+      }
+    } catch (error) {
+      // Try the next sort or the HTML fallback below.
+    }
+  }
+  if (papers.length) return papers.slice(0, maxResults);
   const url = `https://qikan.chaoxing.com/search?sw=${encodeURIComponent(q)}`;
   try {
     const html = await requestText(url, { headers: scholarHeaders(), timeout: 24000 });
-    const papers = parseChaoxing(html, maxResults);
-    return papers.length ? papers : [fallbackSearchPaper('chaoxing', `在超星学术搜索：${q}`, q, url)];
+    const htmlPapers = parseChaoxing(html, maxResults);
+    return htmlPapers.length ? htmlPapers : [fallbackSearchPaper('chaoxing', `在超星学术搜索：${q}`, q, url)];
   } catch (error) {
     return [fallbackSearchPaper('chaoxing', `在超星学术搜索：${q}`, q, url)];
   }
@@ -812,6 +896,68 @@ function compactCookie(setCookies) {
     .join('; ');
 }
 
+function mergeCookies(currentCookie, setCookies) {
+  const jar = new Map();
+  String(currentCookie || '').split(';').map((item) => item.trim()).filter(Boolean).forEach((item) => {
+    const index = item.indexOf('=');
+    if (index > 0) jar.set(item.slice(0, index), item.slice(index + 1));
+  });
+  compactCookie(setCookies).split(';').map((item) => item.trim()).filter(Boolean).forEach((item) => {
+    const index = item.indexOf('=');
+    if (index > 0) jar.set(item.slice(0, index), item.slice(index + 1));
+  });
+  return Array.from(jar.entries()).map(([key, value]) => `${key}=${value}`).join('; ');
+}
+
+async function fetchWithCookieRedirect(url, options = {}) {
+  let currentUrl = url;
+  let cookie = options.cookie || '';
+  let response = null;
+  for (let index = 0; index < 8; index += 1) {
+    response = await fetch(currentUrl, {
+      redirect: 'manual',
+      headers: {
+        ...(options.headers || {}),
+        ...(cookie ? { Cookie: cookie } : {})
+      },
+      signal: AbortSignal.timeout(options.timeout || 24000)
+    });
+    const setCookies = typeof response.headers.getSetCookie === 'function'
+      ? response.headers.getSetCookie()
+      : [response.headers.get('set-cookie')].filter(Boolean);
+    cookie = mergeCookies(cookie, setCookies);
+    const location = response.headers.get('location');
+    if (response.status >= 300 && response.status < 400 && location) {
+      currentUrl = new URL(location, currentUrl).toString();
+      continue;
+    }
+    return { response, cookie, url: currentUrl };
+  }
+  return { response, cookie, url: currentUrl };
+}
+
+async function requestChaoxingJson(url, query) {
+  const searchUrl = `https://qikan.chaoxing.com/search?sw=${encodeURIComponent(query)}`;
+  const init = await fetchWithCookieRedirect(searchUrl, {
+    headers: scholarHeaders(),
+    timeout: 24000
+  });
+  const cookie = init.cookie;
+  const res = await fetch(url, {
+    headers: {
+      ...scholarHeaders(),
+      Accept: 'application/json,text/plain,*/*',
+      Referer: searchUrl,
+      ...(cookie ? { Cookie: cookie } : {})
+    },
+    signal: AbortSignal.timeout(24000)
+  });
+  const raw = await res.text();
+  const data = raw ? JSON.parse(raw) : {};
+  if (!res.ok || data.code === 401) throw new Error(data.msg || `Chaoxing HTTP ${res.status}`);
+  return data;
+}
+
 async function requestEasyScholarConsole(url, options = {}) {
   const res = await fetch(url, {
     method: options.method || 'GET',
@@ -901,7 +1047,9 @@ async function enrichWithEasyScholar(papers) {
   const cache = readEasyScholarCache();
   if (!cache.journals) cache.journals = {};
   let dirty = false;
-  const maxLookups = Math.max(1, Math.min(Number(process.env.EASYSCHOLAR_MAX_LOOKUPS || 20), 80));
+  const configuredLookups = Number(process.env.EASYSCHOLAR_MAX_LOOKUPS || 0);
+  const maxLookups = Math.max(60, Math.min(configuredLookups || 60, 120));
+  const currentMode = easyScholarMode() || 'unknown';
   let lookups = 0;
 
   for (const paper of papers) {
@@ -910,7 +1058,9 @@ async function enrichWithEasyScholar(papers) {
     if (!journal || /arxiv|preprint/i.test(journal) || !normalized) continue;
 
     const cached = cache.journals[normalized];
-    if (cached && cached.updatedAt && Date.now() - new Date(cached.updatedAt).getTime() < 1000 * 60 * 60 * 24 * 30) {
+    const cachedAge = cached && cached.updatedAt ? Date.now() - new Date(cached.updatedAt).getTime() : Infinity;
+    const cacheTtl = cached && cached.metric ? 1000 * 60 * 60 * 24 * 30 : 1000 * 60 * 60 * 6;
+    if (cached && cached.mode === currentMode && cached.updatedAt && cachedAge < cacheTtl) {
       if (cached.metric) paper.metric = cached.metric;
       continue;
     }
@@ -919,11 +1069,11 @@ async function enrichWithEasyScholar(papers) {
     lookups += 1;
     try {
       const metric = await queryEasyScholarMetric(journal);
-      cache.journals[normalized] = { metric, updatedAt: new Date().toISOString() };
+      cache.journals[normalized] = { metric, mode: currentMode, updatedAt: new Date().toISOString() };
       if (metric) paper.metric = metric;
       dirty = true;
     } catch (error) {
-      cache.journals[normalized] = { metric: null, error: error.message, updatedAt: new Date().toISOString() };
+      cache.journals[normalized] = { metric: null, mode: currentMode, error: error.message, updatedAt: new Date().toISOString() };
       dirty = true;
     }
   }

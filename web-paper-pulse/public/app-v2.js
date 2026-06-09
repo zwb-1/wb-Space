@@ -168,7 +168,7 @@ function toNumber(value) {
 }
 
 function normalizeMetricRow(row) {
-  const journal = compactText(row.journal || row.Journal || row['期刊'] || row['期刊名称'] || row.title || row.name);
+  const journal = compactText(row.journal || row.Journal || row.paperName || row.sourceName || row['期刊'] || row['期刊名称'] || row.title || row.name);
   const issnValues = [
     row.issn,
     row.ISSN,
@@ -180,9 +180,9 @@ function normalizeMetricRow(row) {
     row['ISSN-L']
   ].flatMap((value) => String(value || '').split(/[;,，\s]+/));
   const issns = Array.from(new Set(issnValues.map(normalizeIssn).filter((item) => item.length >= 8)));
-  const impactFactor = toNumber(row.impactFactor || row.IF || row['影响因子'] || row['JIF'] || row['Journal Impact Factor']);
-  const partition = compactText(row.partition || row['分区'] || row['SCI分区'] || row['中科院分区'] || row.zone);
-  const quartile = normalizeQuartile(row.quartile || row.Quartile || row.JCR || row['JCR分区'] || row['分区'] || partition);
+  const impactFactor = toNumber(row.impactFactor || row.sciif || row.IF || row.if || row['影响因子'] || row['JIF'] || row['Journal Impact Factor']);
+  const partition = compactText(row.partition || row.sciUp || row.sci || row.ssci || row['分区'] || row['SCI分区'] || row['中科院分区'] || row.zone);
+  const quartile = normalizeQuartile(row.quartile || row.Quartile || row.JCR || row.sci || row.sciUp || row['JCR分区'] || row['分区'] || partition);
   if (!journal && !issns.length) return null;
   return {
     journal,
@@ -191,7 +191,7 @@ function normalizeMetricRow(row) {
     quartile,
     partition,
     year: compactText(row.year || row['年份']),
-    source: compactText(row.source || row['来源'] || '自定义导入')
+    source: compactText(row.source || row.metricProvider || row['来源'] || '自定义导入')
   };
 }
 
