@@ -11,6 +11,7 @@ const HOST = process.env.HOST || '0.0.0.0';
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, 'storage');
 const USER_DB_FILE = process.env.USER_DB_FILE || path.join(STORAGE_DIR, 'users.json');
+const EASYSCHOLAR_CACHE_FILE = process.env.EASYSCHOLAR_CACHE_FILE || path.join(STORAGE_DIR, 'easyscholar-cache.json');
 
 const SOURCE_LABELS = {
   hf: 'HF Daily',
@@ -75,6 +76,53 @@ function normalizeIssn(value) {
 
 function uniqueIssns(values) {
   return Array.from(new Set((values || []).map(normalizeIssn).filter((item) => item.length >= 8)));
+}
+
+function normalizeJournalName(value) {
+  return compactText(value)
+    .toLowerCase()
+    .replace(/&/g, 'and')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim();
+}
+
+function toNumber(value) {
+  const number = Number(String(value || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(number) ? number : 0;
+}
+
+function quartileFromText(value) {
+  const text = String(value || '').toUpperCase();
+  const q = text.match(/Q\s*([1-4])/);
+  if (q) return `Q${q[1]}`;
+  const zone = String(value || '').match(/([1-4])\s*区/);
+  if (zone) return `Q${zone[1]}`;
+  return '';
+}
+
+function compactMetric(metric) {
+  if (!metric) return null;
+  return {
+    journal: compactText(metric.journal || metric.paperName || ''),
+    impactFactor: toNumber(metric.impactFactor || metric.sciif || metric.if || metric.IF),
+    impactFactor5: toNumber(metric.impactFactor5 || metric.sciif5),
+    quartile: compactText(metric.quartile || quartileFromText(metric.sci || metric.sciUp || metric.partition)),
+    partition: compactText(metric.partition || metric.sciUp || metric.sci || metric.ssci || ''),
+    sci: compactText(metric.sci || ''),
+    sciUp: compactText(metric.sciUp || ''),
+    sciUpSmall: compactText(metric.sciUpSmall || ''),
+    sciUpTop: compactText(metric.sciUpTop || ''),
+    source: compactText(metric.source || 'EasyScholar'),
+    updatedAt: metric.updatedAt || new Date().toISOString()
+  };
+}
+
+function readEasyScholarCache() {
+  return readJsonFile(EASYSCHOLAR_CACHE_FILE, { journals: {} });
+}
+
+function writeEasyScholarCache(cache) {
+  writeJsonFile(EASYSCHOLAR_CACHE_FILE, cache);
 }
 
 function syncSecret() {
@@ -537,6 +585,87 @@ async function searchSemanticScholar(query, maxResults) {
   return (data.data || []).map(normalizeSemanticPaper).filter((paper) => paper.title);
 }
 
+function easyScholarEnabled() {
+  return Boolean(process.env.EASYSCHOLAR_COOKIE);
+}
+
+function easyScholarHeaders() {
+  return {
+    Cookie: process.env.EASYSCHOLAR_COOKIE || '',
+    Referer: 'https://www.easyscholar.cc/console/query',
+    Origin: 'https://www.easyscholar.cc',
+    Accept: 'application/json, text/plain, */*'
+  };
+}
+
+function normalizeEasyScholarRow(row) {
+  if (!row) return null;
+  const metric = compactMetric({
+    journal: row.paperName || row.name || row.sourceName,
+    sci: row.sci,
+    ssci: row.ssci,
+    sciUp: row.sciUp,
+    sciUpSmall: row.sciUpSmall,
+    sciUpTop: row.sciUpTop,
+    sciif: row.sciif,
+    sciif5: row.sciif5,
+    source: 'EasyScholar'
+  });
+  return metric && (metric.journal || metric.impactFactor || metric.partition || metric.quartile) ? metric : null;
+}
+
+async function queryEasyScholarMetric(journalName) {
+  const sourceName = compactText(journalName);
+  if (!sourceName || !easyScholarEnabled()) return null;
+  const url = `https://www.easyscholar.cc/api/console/getQueryPublication?sourceName=${encodeURIComponent(sourceName)}&page=1&limit=5`;
+  const data = await requestJson(url, {
+    headers: easyScholarHeaders(),
+    timeout: 24000
+  });
+  if (data.code === 10007) throw new Error('EasyScholar 未登录，请配置 EASYSCHOLAR_COOKIE');
+  if (data.code !== 200) throw new Error(data.msg || `EasyScholar code ${data.code}`);
+  const rows = Array.isArray(data.data) ? data.data : (data.data && Array.isArray(data.data.records) ? data.data.records : []);
+  const normalizedName = normalizeJournalName(sourceName);
+  const exact = rows.find((row) => normalizeJournalName(row.paperName || row.name) === normalizedName);
+  return normalizeEasyScholarRow(exact || rows[0]);
+}
+
+async function enrichWithEasyScholar(papers) {
+  if (!easyScholarEnabled()) return papers;
+  const cache = readEasyScholarCache();
+  if (!cache.journals) cache.journals = {};
+  let dirty = false;
+  const maxLookups = Math.max(1, Math.min(Number(process.env.EASYSCHOLAR_MAX_LOOKUPS || 20), 80));
+  let lookups = 0;
+
+  for (const paper of papers) {
+    const journal = compactText(paper.venueName || '');
+    const normalized = normalizeJournalName(journal);
+    if (!journal || /arxiv|preprint/i.test(journal) || !normalized) continue;
+
+    const cached = cache.journals[normalized];
+    if (cached && cached.updatedAt && Date.now() - new Date(cached.updatedAt).getTime() < 1000 * 60 * 60 * 24 * 30) {
+      if (cached.metric) paper.metric = cached.metric;
+      continue;
+    }
+
+    if (lookups >= maxLookups) continue;
+    lookups += 1;
+    try {
+      const metric = await queryEasyScholarMetric(journal);
+      cache.journals[normalized] = { metric, updatedAt: new Date().toISOString() };
+      if (metric) paper.metric = metric;
+      dirty = true;
+    } catch (error) {
+      cache.journals[normalized] = { metric: null, error: error.message, updatedAt: new Date().toISOString() };
+      dirty = true;
+    }
+  }
+
+  if (dirty) writeEasyScholarCache(cache);
+  return papers;
+}
+
 const SEARCHERS = {
   hf: (event, max) => searchHuggingFace(max),
   arxiv: (event, max) => searchArxiv(event, max),
@@ -753,10 +882,11 @@ async function runSearch(payload) {
       return { source, ok: false, papers: [], error: error.message || String(error) };
     }
   }));
+  const papers = await enrichWithEasyScholar(mergePapers(settled.flatMap((item) => item.papers)));
   return {
     ok: true,
     updatedAt: new Date().toISOString(),
-    papers: mergePapers(settled.flatMap((item) => item.papers)),
+    papers,
     errors: settled.filter((item) => !item.ok).map((item) => ({
       source: item.source,
       sourceLabel: SOURCE_LABELS[item.source] || item.source,
@@ -770,6 +900,7 @@ function keyStatus() {
     openalexMailto: Boolean(process.env.OPENALEX_MAILTO),
     core: Boolean(process.env.CORE_API_KEY),
     semantic: Boolean(process.env.SEMANTIC_SCHOLAR_API_KEY),
+    easyScholar: easyScholarEnabled(),
     translationProvider: process.env.LIBRETRANSLATE_URL ? 'LibreTranslate' : 'Google Translate + MyMemory fallback',
     sync: true,
     customSyncSecret: Boolean(process.env.SYNC_SECRET)

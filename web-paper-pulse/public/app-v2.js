@@ -200,6 +200,9 @@ function buildMetricIndex() {
 }
 
 function metricForPaper(paper) {
+  if (paper.metric) {
+    return normalizeMetricRow(paper.metric) || paper.metric;
+  }
   const index = state.metricIndex || buildMetricIndex();
   const issns = Array.isArray(paper.issns) ? paper.issns : [];
   for (const issn of issns) {
@@ -505,6 +508,12 @@ function renderList(container, papers, emptyText) {
     $('.paper-summary', card).textContent = translationSummary(paper) || paper.shortSummary || paper.summary || '摘要暂缺';
     $('.paper-tags', card).innerHTML = renderTags(paper);
 
+    const viewButton = $('.view-card-button', card);
+    viewButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      openPaper(paper);
+    });
+
     const favoriteButton = $('.favorite-button', card);
     const saved = Boolean(favoriteRecord(paper));
     favoriteButton.textContent = saved ? '★' : '☆';
@@ -517,8 +526,7 @@ function renderList(container, papers, emptyText) {
     const translateButton = $('.translate-card-button', card);
     translateButton.addEventListener('click', (event) => {
       event.stopPropagation();
-      state.selectedId = paper.key;
-      renderAll();
+      openPaper(paper);
       translatePaper(paper);
     });
 
@@ -532,13 +540,22 @@ function renderList(container, papers, emptyText) {
     sourceLink.classList.toggle('disabled', !(paper.url || paper.absUrl));
     sourceLink.addEventListener('click', (event) => event.stopPropagation());
 
-    card.addEventListener('click', () => {
-      state.selectedId = paper.key;
-      renderAll();
-    });
+    card.addEventListener('click', () => openPaper(paper));
     fragment.appendChild(card);
   });
   container.replaceChildren(fragment);
+}
+
+function openPaper(paper, shouldScroll = true) {
+  state.selectedId = paper.key;
+  renderAll();
+  if (!shouldScroll) return;
+  const reader = $('#reader-panel');
+  if (!reader) return;
+  const smallViewport = window.matchMedia && window.matchMedia('(max-width: 1180px)').matches;
+  if (smallViewport) {
+    reader.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
 }
 
 function renderMeta(paper) {
@@ -1087,6 +1104,7 @@ async function loadHealth() {
       <span>OpenAlex mailto：${keys.openalexMailto ? '已配置' : '未配置'}</span>
       <span>CORE key：${keys.core ? '已配置' : '未配置'}</span>
       <span>Semantic Scholar key：${keys.semantic ? '已配置' : '未配置'}</span>
+      <span>EasyScholar：${keys.easyScholar ? '已配置' : '未配置'}</span>
       <span>翻译：${escapeHtml(keys.translationProvider || '可用')}</span>
       <span>账号同步：${keys.sync ? '可用' : '不可用'}</span>
     `;
