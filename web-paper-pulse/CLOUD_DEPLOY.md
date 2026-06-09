@@ -40,11 +40,16 @@ SEMANTIC_SCHOLAR_API_KEY=你的 Semantic Scholar key
 SYNC_SECRET=一串足够长的随机字符
 LIBRETRANSLATE_URL=你的 LibreTranslate 地址
 LIBRETRANSLATE_API_KEY=你的 LibreTranslate key
-EASYSCHOLAR_COOKIE=你的 EasyScholar 登录 Cookie
+EASYSCHOLAR_SECRET_KEY=你的 EasyScholar Open API SecretKey
+EASYSCHOLAR_USERNAME=你的 EasyScholar 登录账号（备用）
+EASYSCHOLAR_PASSWORD=你的 EasyScholar 登录密码（备用）
+EASYSCHOLAR_COOKIE=你的 EasyScholar 登录 Cookie（备用，不推荐优先使用）
 EASYSCHOLAR_MAX_LOOKUPS=20
 ```
 
 8. Deploy 完成后，打开 Render 给你的公网 URL。
+
+如果服务已经通过 Blueprint 创建过，后续新增的 `sync: false` 密钥变量可能不会自动写入现有服务，需要进入 Render Dashboard → paper-pulse-web → Environment 手动新增同名变量后再 redeploy。
 
 ## Railway / Zeabur
 
@@ -67,4 +72,4 @@ npm start
 - 收藏、评分、笔记可以通过设置页的同步账号在电脑和手机之间同步。
 - Render 免费实例的文件存储可能随重启/重新部署丢失。长期保存建议后续接入数据库。
 - 不要把 `.env` 提交到 GitHub。API Key 应该填到云平台的环境变量里。
-- EasyScholar Cookie 属于你的账号登录凭据，只能放在 Render 环境变量中，不要提交到仓库。
+- EasyScholar SecretKey/账号密码/Cookie 属于你的账号凭据，只能放在 Render 环境变量中，不要提交到仓库；优先使用 SecretKey，不占用网页登录态。

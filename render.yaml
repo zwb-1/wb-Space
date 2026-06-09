@@ -11,3 +11,11 @@ services:
         value: production
       - key: SYNC_SECRET
         generateValue: true
+      - key: EASYSCHOLAR_SECRET_KEY
+        sync: false
+      - key: EASYSCHOLAR_USERNAME
+        sync: false
+      - key: EASYSCHOLAR_PASSWORD
+        sync: false
+      - key: EASYSCHOLAR_MAX_LOOKUPS
+        value: "20"

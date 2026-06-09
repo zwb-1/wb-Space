@@ -12,6 +12,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 const STORAGE_DIR = process.env.STORAGE_DIR || path.join(__dirname, 'storage');
 const USER_DB_FILE = process.env.USER_DB_FILE || path.join(STORAGE_DIR, 'users.json');
 const EASYSCHOLAR_CACHE_FILE = process.env.EASYSCHOLAR_CACHE_FILE || path.join(STORAGE_DIR, 'easyscholar-cache.json');
+let easyScholarSecretCache = { value: '', updatedAt: 0, promise: null };
 
 const SOURCE_LABELS = {
   hf: 'HF Daily',
@@ -586,7 +587,18 @@ async function searchSemanticScholar(query, maxResults) {
 }
 
 function easyScholarEnabled() {
-  return Boolean(process.env.EASYSCHOLAR_COOKIE);
+  return Boolean(
+    process.env.EASYSCHOLAR_SECRET_KEY ||
+    process.env.EASYSCHOLAR_COOKIE ||
+    ((process.env.EASYSCHOLAR_USERNAME || process.env.EASYSCHOLAR_USER) && process.env.EASYSCHOLAR_PASSWORD)
+  );
+}
+
+function easyScholarMode() {
+  if (process.env.EASYSCHOLAR_SECRET_KEY) return 'SecretKey';
+  if ((process.env.EASYSCHOLAR_USERNAME || process.env.EASYSCHOLAR_USER) && process.env.EASYSCHOLAR_PASSWORD) return 'Account';
+  if (process.env.EASYSCHOLAR_COOKIE) return 'Cookie';
+  return '';
 }
 
 function easyScholarHeaders() {
@@ -601,7 +613,11 @@ function easyScholarHeaders() {
 function normalizeEasyScholarRow(row) {
   if (!row) return null;
   const metric = compactMetric({
-    journal: row.paperName || row.name || row.sourceName,
+    journal: row.paperName || row.name || row.sourceName || row.publicationName || row.journal,
+    impactFactor: row.impactFactor || row.sciif || row.jcrIF,
+    impactFactor5: row.impactFactor5 || row.sciif5,
+    quartile: row.quartile || row.JCR || row.sci || row.sciUp || row.rankText || row.officialRankText,
+    partition: row.partition || row.sciUp || row.sci || row.ssci || row.rankText || row.officialRankText,
     sci: row.sci,
     ssci: row.ssci,
     sciUp: row.sciUp,
@@ -614,9 +630,119 @@ function normalizeEasyScholarRow(row) {
   return metric && (metric.journal || metric.impactFactor || metric.partition || metric.quartile) ? metric : null;
 }
 
-async function queryEasyScholarMetric(journalName) {
+function pickEasyScholarOpenRow(data) {
+  const payload = data && data.data ? data.data : data;
+  if (!payload) return null;
+  if (Array.isArray(payload)) return payload[0] || null;
+  if (payload.paperName || payload.publicationName || payload.sciif || payload.sci || payload.sciUp) return payload;
+  if (payload.officialRank || payload.customRank) {
+    const officialAll = payload.officialRank && payload.officialRank.all ? payload.officialRank.all : {};
+    const officialSelect = payload.officialRank && payload.officialRank.select ? payload.officialRank.select : {};
+    const customRank = payload.customRank || {};
+    return {
+      paperName: data.publicationName || data.name || '',
+      sci: officialSelect.sci || officialAll.sci,
+      ssci: officialSelect.ssci || officialAll.ssci,
+      sciUp: officialSelect.sciUp || officialAll.sciUp,
+      sciUpSmall: officialSelect.sciUpSmall || officialAll.sciUpSmall,
+      sciUpTop: officialSelect.sciUpTop || officialAll.sciUpTop,
+      sciif: officialSelect.sciif || officialAll.sciif,
+      sciif5: officialSelect.sciif5 || officialAll.sciif5,
+      officialRankText: Object.entries({ ...officialAll, ...officialSelect })
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+        .join('；'),
+      rankText: Object.entries(customRank)
+        .filter(([, value]) => value !== undefined && value !== null && value !== '')
+        .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+        .join('；')
+    };
+  }
+  return null;
+}
+
+async function queryEasyScholarOpenMetric(journalName) {
   const sourceName = compactText(journalName);
-  if (!sourceName || !easyScholarEnabled()) return null;
+  const secretKey = await getEasyScholarSecretKey();
+  if (!sourceName || !secretKey) return null;
+  const url = `https://www.easyscholar.cc/open/getPublicationRank?secretKey=${encodeURIComponent(secretKey)}&publicationName=${encodeURIComponent(sourceName)}`;
+  const data = await requestJson(url, { timeout: 24000 });
+  if (data.code && data.code !== 200) throw new Error(data.msg || `EasyScholar code ${data.code}`);
+  return normalizeEasyScholarRow(pickEasyScholarOpenRow({ ...data, publicationName: sourceName }));
+}
+
+function compactCookie(setCookies) {
+  return (setCookies || [])
+    .flatMap((item) => String(item || '').split(/,(?=\s*[^;,]+=)/))
+    .map((item) => item.split(';')[0].trim())
+    .filter(Boolean)
+    .join('; ');
+}
+
+async function requestEasyScholarConsole(url, options = {}) {
+  const res = await fetch(url, {
+    method: options.method || 'GET',
+    headers: {
+      'User-Agent': 'PaperPulseWeb/1.0 (personal research dashboard)',
+      Accept: 'application/json, text/plain, */*',
+      Referer: 'https://www.easyscholar.cc/console/open',
+      Origin: 'https://www.easyscholar.cc',
+      ...(String(options.method || 'GET').toUpperCase() === 'POST' ? { 'Content-Type': 'multipart/form-data' } : {}),
+      ...(options.cookie ? { Cookie: options.cookie } : {})
+    }
+  });
+  const raw = await res.text();
+  const data = raw ? JSON.parse(raw) : {};
+  if (!res.ok) throw new Error(`EasyScholar HTTP ${res.status}`);
+  const setCookies = typeof res.headers.getSetCookie === 'function'
+    ? res.headers.getSetCookie()
+    : [res.headers.get('set-cookie')].filter(Boolean);
+  return { data, cookie: compactCookie(setCookies) };
+}
+
+async function getEasyScholarSecretKey() {
+  if (process.env.EASYSCHOLAR_SECRET_KEY) return process.env.EASYSCHOLAR_SECRET_KEY;
+  const username = process.env.EASYSCHOLAR_USERNAME || process.env.EASYSCHOLAR_USER;
+  const password = process.env.EASYSCHOLAR_PASSWORD;
+  if (!username || !password) return '';
+  if (easyScholarSecretCache.value && Date.now() - easyScholarSecretCache.updatedAt < 1000 * 60 * 60 * 12) {
+    return easyScholarSecretCache.value;
+  }
+  if (easyScholarSecretCache.promise) return easyScholarSecretCache.promise;
+
+  easyScholarSecretCache.promise = (async () => {
+    const loginUrl = `https://www.easyscholar.cc/login?userName=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const login = await requestEasyScholarConsole(loginUrl);
+    if (login.data.code && login.data.code !== 200) throw new Error(login.data.msg || `EasyScholar login code ${login.data.code}`);
+    const cookie = login.cookie;
+    let secret = '';
+    const existing = await requestEasyScholarConsole('https://www.easyscholar.cc/api/console/user/open/getSecretKey', { cookie });
+    if (existing.data.code === 200 && existing.data.data && existing.data.data.secretKey) {
+      secret = existing.data.data.secretKey;
+    } else {
+      const created = await requestEasyScholarConsole('https://www.easyscholar.cc/api/console/user/open/createSecretKey', {
+        method: 'POST',
+        cookie
+      });
+      if (created.data.code !== 200 || !created.data.data || !created.data.data.secretKey) {
+        throw new Error(created.data.msg || existing.data.msg || 'EasyScholar SecretKey 获取失败');
+      }
+      secret = created.data.data.secretKey;
+    }
+    easyScholarSecretCache = { value: secret, updatedAt: Date.now(), promise: null };
+    return secret;
+  })();
+
+  try {
+    return await easyScholarSecretCache.promise;
+  } finally {
+    easyScholarSecretCache.promise = null;
+  }
+}
+
+async function queryEasyScholarCookieMetric(journalName) {
+  const sourceName = compactText(journalName);
+  if (!sourceName || !process.env.EASYSCHOLAR_COOKIE) return null;
   const url = `https://www.easyscholar.cc/api/console/getQueryPublication?sourceName=${encodeURIComponent(sourceName)}&page=1&limit=5`;
   const data = await requestJson(url, {
     headers: easyScholarHeaders(),
@@ -628,6 +754,13 @@ async function queryEasyScholarMetric(journalName) {
   const normalizedName = normalizeJournalName(sourceName);
   const exact = rows.find((row) => normalizeJournalName(row.paperName || row.name) === normalizedName);
   return normalizeEasyScholarRow(exact || rows[0]);
+}
+
+async function queryEasyScholarMetric(journalName) {
+  if (process.env.EASYSCHOLAR_SECRET_KEY || ((process.env.EASYSCHOLAR_USERNAME || process.env.EASYSCHOLAR_USER) && process.env.EASYSCHOLAR_PASSWORD)) {
+    return queryEasyScholarOpenMetric(journalName);
+  }
+  return queryEasyScholarCookieMetric(journalName);
 }
 
 async function enrichWithEasyScholar(papers) {
@@ -706,19 +839,32 @@ function mergePapers(papers) {
   return Array.from(map.values()).sort((a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0));
 }
 
-function splitTextForTranslation(text, maxLength = 1600) {
+function splitTextForTranslation(text, maxLength = 450) {
   const source = compactText(text);
   if (!source) return [];
   const chunks = [];
   let current = '';
-  source.split(/(?<=[.!?。！？])\s+/).forEach((sentence) => {
+  const pushSentence = (sentence) => {
+    const value = sentence.trim();
+    if (!value) return;
+    if (value.length > maxLength) {
+      if (current) {
+        chunks.push(current.trim());
+        current = '';
+      }
+      for (let index = 0; index < value.length; index += maxLength) {
+        chunks.push(value.slice(index, index + maxLength).trim());
+      }
+      return;
+    }
     if ((current + ' ' + sentence).trim().length > maxLength && current) {
       chunks.push(current.trim());
-      current = sentence;
+      current = value;
     } else {
-      current = `${current} ${sentence}`.trim();
+      current = `${current} ${value}`.trim();
     }
-  });
+  };
+  source.split(/(?<=[.!?。！？])\s+/).forEach(pushSentence);
   if (current) chunks.push(current.trim());
   return chunks;
 }
@@ -901,6 +1047,7 @@ function keyStatus() {
     core: Boolean(process.env.CORE_API_KEY),
     semantic: Boolean(process.env.SEMANTIC_SCHOLAR_API_KEY),
     easyScholar: easyScholarEnabled(),
+    easyScholarMode: easyScholarMode(),
     translationProvider: process.env.LIBRETRANSLATE_URL ? 'LibreTranslate' : 'Google Translate + MyMemory fallback',
     sync: true,
     customSyncSecret: Boolean(process.env.SYNC_SECRET)

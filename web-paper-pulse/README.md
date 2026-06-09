@@ -35,9 +35,9 @@ SEMANTIC_SCHOLAR_API_KEY=你的_SEMANTIC_SCHOLAR_KEY
 ## 新功能
 
 - 账号同步：设置页登录/创建账号后，电脑和手机会同步收藏、笔记、设置、翻译缓存和期刊指标表。
-- 翻译：在右侧阅读面板点击“翻译标题与摘要”。
+- 翻译：列表会自动生成标题/摘要中英对照，点击论文卡片可在原位置展开阅读；也可手动点“翻译/更新翻译”。
 - 影响因子/分区筛选：默认按 SCI 2 区 / Q2 及以上筛选已知指标的期刊；未知指标默认保留，严格模式会隐藏未知指标。
 - 指标导入：设置页下载 CSV 模板，填入 `journal, issn, impactFactor, quartile, partition, year, source` 后导入。
-- EasyScholar：可在云平台环境变量配置 `EASYSCHOLAR_COOKIE`，服务端会按期刊名从 EasyScholar 查询并缓存影响因子/分区；未配置时使用手动导入表。
+- EasyScholar：优先在云平台环境变量配置官方 Open API 的 `EASYSCHOLAR_SECRET_KEY`，服务端会按期刊名从 EasyScholar 查询并缓存影响因子/分区；`EASYSCHOLAR_COOKIE` 仅作为备用方式。未配置时使用手动导入表。
 
 官方 JCR 影响因子和 SCI 分区通常是授权数据，本项目不会内置或伪造这些值。请导入你自己有权限使用的 JCR/中科院/SCI 分区表。

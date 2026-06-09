@@ -17,7 +17,9 @@ const DEFAULT_SETTINGS = {
   minQuartile: 'Q2',
   minImpactFactor: 0,
   requireKnownMetrics: false,
-  includePreprints: true
+  includePreprints: true,
+  autoTranslate: true,
+  autoTranslateLimit: 10
 };
 
 const sourceNames = {
@@ -35,11 +37,14 @@ const state = {
   filter: 'all',
   reportType: 'daily',
   selectedId: '',
+  expandedKey: '',
   papers: [],
   errors: [],
   updatedAt: '',
   metricIndex: null,
   syncTimer: null,
+  translating: {},
+  autoTranslateActive: false,
   settings: loadObject(STORE_KEYS.settings, DEFAULT_SETTINGS),
   favorites: loadObject(STORE_KEYS.favorites, {}),
   journalMetrics: loadArray(STORE_KEYS.journalMetrics),
@@ -402,7 +407,9 @@ async function refreshPapers(event) {
 
     const shown = visiblePapers();
     state.selectedId = shown[0] ? shown[0].key : (state.papers[0] ? state.papers[0].key : '');
+    state.expandedKey = '';
     renderAll();
+    autoTranslateVisiblePapers();
 
     const failed = state.errors.map((item) => item.sourceLabel).join('、');
     const hidden = state.papers.length - shown.length;
@@ -491,6 +498,58 @@ function renderFavorites() {
   renderList($('#favorite-list'), papers, '还没有收藏论文');
 }
 
+function paperLinksHtml(paper) {
+  return [
+    paper.pdfUrl ? `<a href="${escapeHtml(paper.pdfUrl)}" target="_blank" rel="noreferrer">PDF</a>` : '',
+    paper.url || paper.absUrl ? `<a href="${escapeHtml(paper.url || paper.absUrl)}" target="_blank" rel="noreferrer">原文</a>` : '',
+    paper.doi ? `<a href="https://doi.org/${escapeHtml(String(paper.doi).replace(/^https?:\/\/doi.org\//, ''))}" target="_blank" rel="noreferrer">DOI</a>` : '',
+    paper.codeUrl ? `<a href="${escapeHtml(paper.codeUrl)}" target="_blank" rel="noreferrer">代码</a>` : ''
+  ].filter(Boolean).join('');
+}
+
+function renderExpandedPaper(card, paper) {
+  const cached = translationFor(paper);
+  const titleZh = cached.titleZh || '';
+  const summaryZh = cached.summaryZh || (cached.translatedText && !cached.titleZh ? cached.translatedText : '');
+  const translating = Boolean(state.translating[paper.key]);
+  const metric = paper.quality && paper.quality.metric;
+  const links = paperLinksHtml(paper);
+  const saved = Boolean(favoriteRecord(paper));
+  const expanded = document.createElement('div');
+  expanded.className = 'paper-expanded';
+  expanded.innerHTML = `
+    <div class="expanded-section">
+      <h4>标题</h4>
+      <p class="expanded-original">${escapeHtml(paper.title || 'Untitled')}</p>
+      <p class="expanded-translation">${escapeHtml(titleZh || (translating ? '正在翻译标题...' : '标题译文待生成'))}</p>
+    </div>
+    <div class="expanded-section">
+      <h4>摘要</h4>
+      <p class="expanded-original">${escapeHtml(paper.summary || paper.shortSummary || '摘要暂缺')}</p>
+      <p class="expanded-translation">${escapeHtml(summaryZh || (translating ? '正在翻译摘要...' : '摘要译文待生成'))}</p>
+    </div>
+    <div class="expanded-section">
+      <h4>期刊指标</h4>
+      <p class="expanded-original">${escapeHtml(metric ? `${metric.journal || paper.venueName || '期刊'}：${metricLabel(metric)}；来源：${metric.source || '自定义'}。` : `${paper.venueName || '期刊未知'}：暂无影响因子/分区数据。`)}</p>
+    </div>
+    <div class="expanded-toolbar">
+      <button class="primary-button expanded-translate-button" type="button">${titleZh || summaryZh ? '更新翻译' : '翻译'}</button>
+      <button class="${saved ? 'ghost-button' : 'primary-button'} expanded-favorite-button" type="button">${saved ? '取消收藏' : '收藏'}</button>
+      <div class="reader-links">${links || '<span class="badge">暂无链接</span>'}</div>
+    </div>
+  `;
+  $('.expanded-translate-button', expanded).addEventListener('click', (event) => {
+    event.stopPropagation();
+    translatePaper(paper, { force: true });
+  });
+  $('.expanded-favorite-button', expanded).addEventListener('click', (event) => {
+    event.stopPropagation();
+    toggleFavorite(paper);
+  });
+  $$('.reader-links a', expanded).forEach((link) => link.addEventListener('click', (event) => event.stopPropagation()));
+  card.appendChild(expanded);
+}
+
 function renderList(container, papers, emptyText) {
   if (!papers.length) {
     container.innerHTML = `<div class="empty-state">${escapeHtml(emptyText)}</div>`;
@@ -502,10 +561,21 @@ function renderList(container, papers, emptyText) {
     const card = template.content.firstElementChild.cloneNode(true);
     card.dataset.key = paper.key;
     card.classList.toggle('selected', state.selectedId === paper.key);
+    card.classList.toggle('expanded', state.expandedKey === paper.key);
+    const cached = translationFor(paper);
+    const titleZh = cached.titleZh || '';
+    const summaryZh = cached.summaryZh || (cached.translatedText && !cached.titleZh ? cached.translatedText : '');
+    const translating = Boolean(state.translating[paper.key]);
     $('.paper-meta', card).innerHTML = renderMeta(paper);
     $('h3', card).textContent = paper.title || 'Untitled';
+    const titleCn = $('.paper-title-cn', card);
+    titleCn.textContent = titleZh || (translating ? '正在翻译标题...' : '');
+    titleCn.hidden = !titleCn.textContent;
     $('.paper-authors', card).textContent = paper.authors || '作者信息暂缺';
-    $('.paper-summary', card).textContent = translationSummary(paper) || paper.shortSummary || paper.summary || '摘要暂缺';
+    $('.paper-summary', card).textContent = paper.shortSummary || paper.summary || '摘要暂缺';
+    const summaryCn = $('.paper-summary-cn', card);
+    summaryCn.textContent = summaryZh ? summaryZh.slice(0, 360) : (translating ? '正在翻译摘要...' : '');
+    summaryCn.hidden = !summaryCn.textContent;
     $('.paper-tags', card).innerHTML = renderTags(paper);
 
     const viewButton = $('.view-card-button', card);
@@ -527,7 +597,7 @@ function renderList(container, papers, emptyText) {
     translateButton.addEventListener('click', (event) => {
       event.stopPropagation();
       openPaper(paper);
-      translatePaper(paper);
+      translatePaper(paper, { force: true });
     });
 
     const pdfLink = $('.pdf-link', card);
@@ -541,21 +611,16 @@ function renderList(container, papers, emptyText) {
     sourceLink.addEventListener('click', (event) => event.stopPropagation());
 
     card.addEventListener('click', () => openPaper(paper));
+    if (state.expandedKey === paper.key) renderExpandedPaper(card, paper);
     fragment.appendChild(card);
   });
   container.replaceChildren(fragment);
 }
 
-function openPaper(paper, shouldScroll = true) {
+function openPaper(paper) {
   state.selectedId = paper.key;
+  state.expandedKey = paper.key;
   renderAll();
-  if (!shouldScroll) return;
-  const reader = $('#reader-panel');
-  if (!reader) return;
-  const smallViewport = window.matchMedia && window.matchMedia('(max-width: 1180px)').matches;
-  if (smallViewport) {
-    reader.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
 }
 
 function renderMeta(paper) {
@@ -577,9 +642,17 @@ function renderTags(paper) {
   return tags.map((tag) => `<span class="badge">${escapeHtml(tag)}</span>`).join('');
 }
 
-function translationSummary(paper) {
+function translationFor(paper) {
   const cached = state.translations[paper.key];
-  return cached && cached.translatedText ? cached.translatedText.slice(0, 260) : '';
+  if (!cached) return {};
+  if (typeof cached === 'string') return { summaryZh: cached, translatedText: cached };
+  return cached;
+}
+
+function translationSummary(paper) {
+  const cached = translationFor(paper);
+  const text = cached.summaryZh || cached.translatedText || '';
+  return text ? text.slice(0, 260) : '';
 }
 
 function renderReader() {
@@ -593,18 +666,17 @@ function renderReader() {
   const saved = favoriteRecord(paper);
   const note = saved ? saved.note || '' : paper.note || '';
   const rating = saved ? saved.rating || paper.rating || 1 : paper.userRating || paper.rating || 1;
-  const cachedTranslation = state.translations[paper.key];
+  const cachedTranslation = translationFor(paper);
+  const titleZh = cachedTranslation.titleZh || '';
+  const summaryZh = cachedTranslation.summaryZh || (cachedTranslation.translatedText && !cachedTranslation.titleZh ? cachedTranslation.translatedText : '');
+  const translating = Boolean(state.translating[paper.key]);
   const metric = paper.quality.metric;
-  const links = [
-    paper.pdfUrl ? `<a href="${escapeHtml(paper.pdfUrl)}" target="_blank" rel="noreferrer">PDF</a>` : '',
-    paper.url || paper.absUrl ? `<a href="${escapeHtml(paper.url || paper.absUrl)}" target="_blank" rel="noreferrer">原文</a>` : '',
-    paper.doi ? `<a href="https://doi.org/${escapeHtml(String(paper.doi).replace(/^https?:\/\/doi.org\//, ''))}" target="_blank" rel="noreferrer">DOI</a>` : '',
-    paper.codeUrl ? `<a href="${escapeHtml(paper.codeUrl)}" target="_blank" rel="noreferrer">代码</a>` : ''
-  ].filter(Boolean).join('');
+  const links = paperLinksHtml(paper);
 
   panel.innerHTML = `
     <p class="eyebrow">Reader</p>
     <h2 class="reader-title">${escapeHtml(paper.title)}</h2>
+    <p class="reader-title-cn" id="reader-title-translation">${escapeHtml(titleZh || (translating ? '正在翻译标题...' : ''))}</p>
     <div class="reader-meta">${renderMeta(paper)}</div>
     <p class="paper-authors">${escapeHtml(paper.authors || '作者信息暂缺')}</p>
     <div class="reader-section">
@@ -615,9 +687,9 @@ function renderReader() {
       <h3>摘要</h3>
       <p class="reader-summary">${escapeHtml(paper.summary || paper.shortSummary || '摘要暂缺')}</p>
       <div class="data-actions">
-        <button class="primary-button" id="reader-translate" type="button">翻译标题与摘要</button>
+        <button class="primary-button" id="reader-translate" type="button">${titleZh || summaryZh ? '更新翻译' : '翻译标题与摘要'}</button>
       </div>
-      <p class="reader-summary translation-box" id="reader-translation">${escapeHtml(cachedTranslation ? cachedTranslation.translatedText : '')}</p>
+      <p class="reader-summary translation-box" id="reader-translation">${escapeHtml(summaryZh || (translating ? '正在翻译摘要...' : ''))}</p>
     </div>
     <div class="reader-section">
       <h3>链接</h3>
@@ -637,7 +709,7 @@ function renderReader() {
   `;
 
   $('#reader-favorite').addEventListener('click', () => toggleFavorite(paper));
-  $('#reader-translate').addEventListener('click', () => translatePaper(paper));
+  $('#reader-translate').addEventListener('click', () => translatePaper(paper, { force: true }));
   $('#reader-rating').addEventListener('input', (event) => {
     saveFavorite(paper, { rating: event.target.value });
     state.papers = state.papers.map(enrichPaper);
@@ -652,30 +724,73 @@ function renderReader() {
   });
 }
 
-async function translatePaper(paper) {
-  const target = $('#reader-translation');
-  if (target) target.textContent = '正在翻译...';
+async function requestTranslation(text) {
+  const source = compactText(text);
+  if (!source) return { translatedText: '', provider: '' };
+  const response = await fetch('/api/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text: source, target: 'zh-CN' })
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+  return data;
+}
+
+function translationComplete(paper) {
+  const cached = translationFor(paper);
+  const hasTitle = !compactText(paper.title) || Boolean(compactText(cached.titleZh));
+  const summarySource = compactText(paper.summary || paper.shortSummary || '');
+  const hasSummary = !summarySource || Boolean(compactText(cached.summaryZh || cached.translatedText));
+  return hasTitle && hasSummary;
+}
+
+async function translatePaper(paper, options = {}) {
+  if (!paper || state.translating[paper.key]) return;
+  if (!options.force && translationComplete(paper)) return;
+  const titleTarget = $('#reader-title-translation');
+  const summaryTarget = $('#reader-translation');
+  state.translating[paper.key] = true;
+  if (titleTarget) titleTarget.textContent = '正在翻译标题...';
+  if (summaryTarget) summaryTarget.textContent = '正在翻译摘要...';
   try {
-    const text = `${paper.title}\n\n${paper.summary || paper.shortSummary || ''}`;
-    const response = await fetch('/api/translate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, target: 'zh-CN' })
-    });
-    const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    const titleData = await requestTranslation(paper.title || '');
+    const summaryData = await requestTranslation(paper.summary || paper.shortSummary || '');
+    const titleZh = titleData.translatedText || '';
+    const summaryZh = summaryData.translatedText || '';
+    const providers = Array.from(new Set([titleData.provider, summaryData.provider].filter(Boolean)));
     state.translations[paper.key] = {
-      translatedText: data.translatedText,
-      provider: data.provider,
+      ...translationFor(paper),
+      titleZh,
+      summaryZh,
+      translatedText: [titleZh, summaryZh].filter(Boolean).join('\n\n'),
+      provider: providers.join(' + '),
       updatedAt: new Date().toISOString()
     };
     saveJson(STORE_KEYS.translations, state.translations);
     scheduleSyncPush();
+    delete state.translating[paper.key];
     renderAll();
-    setStatus(`已翻译：${paper.title.slice(0, 30)}`);
+    if (!options.auto) setStatus(`已翻译：${paper.title.slice(0, 30)}`);
   } catch (error) {
-    if (target) target.textContent = `翻译失败：${error.message || error}`;
-    setStatus(`翻译失败：${error.message || error}`, true);
+    delete state.translating[paper.key];
+    renderAll();
+    if (summaryTarget) summaryTarget.textContent = `翻译失败：${error.message || error}`;
+    if (!options.auto) setStatus(`翻译失败：${error.message || error}`, true);
+  }
+}
+
+async function autoTranslateVisiblePapers() {
+  if (!state.settings.autoTranslate || state.autoTranslateActive) return;
+  state.autoTranslateActive = true;
+  try {
+    const limit = Math.max(1, Math.min(Number(state.settings.autoTranslateLimit || 10), 20));
+    const papers = visiblePapers().slice(0, limit);
+    for (const paper of papers) {
+      if (!translationComplete(paper)) await translatePaper(paper, { auto: true });
+    }
+  } finally {
+    state.autoTranslateActive = false;
   }
 }
 
@@ -717,7 +832,8 @@ function buildDailyReport(papers) {
       `- PDF：${paper.pdfUrl || '暂无'}`,
       `- 摘要：${paper.shortSummary || paper.summary || '暂无'}`
     );
-    if (state.translations[paper.key]) lines.push(`- 译文：${state.translations[paper.key].translatedText.slice(0, 500)}`);
+    const translated = translationFor(paper).translatedText || translationFor(paper).summaryZh || '';
+    if (translated) lines.push(`- 译文：${translated.slice(0, 500)}`);
     if (paper.note) lines.push(`- 笔记：${paper.note}`);
   });
   return lines.join('\n');
@@ -1104,7 +1220,7 @@ async function loadHealth() {
       <span>OpenAlex mailto：${keys.openalexMailto ? '已配置' : '未配置'}</span>
       <span>CORE key：${keys.core ? '已配置' : '未配置'}</span>
       <span>Semantic Scholar key：${keys.semantic ? '已配置' : '未配置'}</span>
-      <span>EasyScholar：${keys.easyScholar ? '已配置' : '未配置'}</span>
+      <span>EasyScholar：${keys.easyScholar ? `已配置${keys.easyScholarMode ? `（${escapeHtml(keys.easyScholarMode)}）` : ''}` : '未配置'}</span>
       <span>翻译：${escapeHtml(keys.translationProvider || '可用')}</span>
       <span>账号同步：${keys.sync ? '可用' : '不可用'}</span>
     `;
