@@ -1,0 +1,29 @@
+<view class="page">
+  <view class="between header">
+    <view>
+      <text class="eyebrow">Saved</text>
+      <text class="title">收藏</text>
+    </view>
+    <button wx:if="{{favorites.length}}" class="danger-btn" bindtap="clearAll">清空</button>
+  </view>
+
+  <view class="paper-list" wx:if="{{favorites.length}}">
+    <block wx:for="{{favorites}}" wx:key="id">
+      <view class="paper-card" data-id="{{item.id}}" bindtap="openPaper">
+        <view class="between paper-meta">
+          <view class="meta-left">
+            <text class="pill source-{{item.source}}">{{item.sourceLabel}}</text>
+            <text class="date">{{item.dateText}}</text>
+          </view>
+          <button class="fav saved" data-id="{{item.id}}" catchtap="removeFavorite">移除</button>
+        </view>
+        <text class="paper-title">{{item.title}}</text>
+        <text class="summary">{{item.shortSummary}}</text>
+      </view>
+    </block>
+  </view>
+
+  <view class="empty" wx:else>
+    <text>还没有收藏</text>
+  </view>
+</view>

@@ -1,0 +1,7 @@
+{
+  "name": "search-papers",
+  "version": "1.0.0",
+  "description": "Proxy keyed literature APIs for the paper reader mini program",
+  "main": "index.js",
+  "license": "MIT"
+}

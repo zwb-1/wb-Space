@@ -1,0 +1,12 @@
+{
+  "name": "paper-pulse-web",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Personal literature discovery dashboard for arXiv, OpenAlex, Crossref, PubMed, CORE, Semantic Scholar and Hugging Face papers.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

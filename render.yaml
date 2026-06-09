@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: paper-pulse-web
+    runtime: node
+    rootDir: web-paper-pulse
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production

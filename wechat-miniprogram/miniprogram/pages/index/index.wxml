@@ -1,0 +1,65 @@
+<view class="page">
+  <view class="between header">
+    <view>
+      <text class="eyebrow">Paper Pulse</text>
+      <text class="title">今日论文</text>
+    </view>
+    <view class="header-actions">
+      <button class="quiet-btn small" bindtap="goFavorites">收藏</button>
+      <button class="quiet-btn small" bindtap="goReports">报告</button>
+      <button class="quiet-btn small" bindtap="goSettings">设置</button>
+    </view>
+  </view>
+
+  <view class="between toolbar">
+    <scroll-view class="source-scroll" scroll-x enable-flex>
+      <view class="segmented">
+        <button class="seg {{activeSource === item.key ? 'on' : ''}}" wx:for="{{sources}}" wx:key="key" data-source="{{item.key}}" bindtap="changeSource">{{item.label}}</button>
+      </view>
+    </scroll-view>
+    <button class="primary-btn refresh" loading="{{loading}}" bindtap="refresh">刷新</button>
+  </view>
+
+  <view class="search">
+    <input value="{{keyword}}" placeholder="搜索标题、摘要、关键词" confirm-type="search" bindinput="onSearchInput" />
+    <button wx:if="{{keyword}}" class="clear" bindtap="clearSearch">清空</button>
+  </view>
+
+  <view class="status muted" wx:if="{{lastUpdated && !loading}}">更新于 {{lastUpdated}} · {{filteredPapers.length}} 篇</view>
+  <view class="notice" wx:if="{{error}}">{{error}}</view>
+
+  <view class="paper-list" wx:if="{{filteredPapers.length}}">
+    <block wx:for="{{filteredPapers}}" wx:key="id">
+      <view class="paper-card {{item.read ? 'read' : ''}}" data-id="{{item.id}}" bindtap="openPaper">
+        <image wx:if="{{item.thumbnail}}" class="thumb" mode="aspectFill" src="{{item.thumbnail}}"></image>
+        <view class="paper-body">
+          <view class="between paper-meta">
+            <view class="meta-left">
+              <text class="pill source-{{item.source}}">{{item.sourceLabel}}</text>
+              <text class="date">{{item.dateText}}</text>
+            </view>
+            <view class="meta-right">
+              <text class="score">{{item.rating}}★ {{item.relevanceScore}}</text>
+              <button class="fav {{item.favorite ? 'saved' : ''}}" data-id="{{item.id}}" catchtap="toggleFavorite">{{item.favorite ? '已藏' : '收藏'}}</button>
+            </view>
+          </view>
+
+          <text class="paper-title">{{item.title}}</text>
+          <text class="summary">{{item.shortSummary}}</text>
+          <text class="authors" wx:if="{{item.authors}}">{{item.authors}}</text>
+
+          <view class="tags" wx:if="{{item.tags.length}}">
+            <text class="tag" wx:for="{{item.tags}}" wx:key="*this">{{item}}</text>
+          </view>
+          <view class="hits" wx:if="{{item.keywordHits.length}}">
+            <text class="hit" wx:for="{{item.keywordHits}}" wx:key="*this">{{item}}</text>
+          </view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <view class="empty" wx:elif="{{!loading}}">
+    <text>没有匹配的论文</text>
+  </view>
+</view>

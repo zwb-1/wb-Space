@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+node_modules/
+.env
+web-paper-pulse/.env
+web-paper-pulse/node_modules/
+wechat-miniprogram/project.private.config.json
+wechat-miniprogram/miniprogram/miniprogram_npm/
+/project.config.json
+/project.private.config.json

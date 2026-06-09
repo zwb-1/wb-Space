@@ -1,21 +1,31 @@
 @echo off
-:: 设置控制台支持 UTF-8 中文显示
-chcp 65001
+setlocal
+chcp 65001 >nul
+cd /d "%~dp0"
+
 echo ====================================================
-echo   ArXiv 论文分析 Agent 启动中...
-echo   当前时间: %date% %time%
+echo   ArXiv daily paper agent starting...
+echo   Current time: %date% %time%
 echo ====================================================
 
-python "daily_paper.py"
+if not exist ".venv\Scripts\python.exe" (
+    echo [ERROR] Missing virtual environment: .venv
+    echo Run: py -3.9 -m venv .venv
+    echo Then install dependencies: .venv\Scripts\python.exe -m pip install arxiv requests
+    pause
+    exit /b 1
+)
+
+".venv\Scripts\python.exe" "daily_paper.py"
 
 if %ERRORLEVEL% equ 0 (
     echo.
-    echo [成功] 论文抓取分析已完成，并已推送到飞书。
+    echo [OK] Script finished.
 ) else (
     echo.
-    echo [错误] 脚本运行出错，请检查 API Key 或网络连接。
+    echo [ERROR] Script failed. Please check API keys, webhook, or network access.
 )
 
 echo.
-echo 窗口将在 10 秒后自动关闭...
-timeout /t 10
+echo Window will close in 10 seconds...
+timeout /t 10 >nul

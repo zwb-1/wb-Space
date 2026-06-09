@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paper Pulse Web</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark">PP</div>
+        <div>
+          <p class="eyebrow">Paper Pulse</p>
+          <h1>今日论文工作台</h1>
+        </div>
+      </div>
+      <nav class="view-tabs" aria-label="主视图">
+        <button class="view-tab active" type="button" data-view="search">检索</button>
+        <button class="view-tab" type="button" data-view="favorites">收藏</button>
+        <button class="view-tab" type="button" data-view="reports">报告</button>
+        <button class="view-tab" type="button" data-view="settings">设置</button>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <section class="tool-panel" data-panel="search">
+        <form id="search-form" class="search-form">
+          <label class="field wide-field">
+            <span>研究主题</span>
+            <input id="query-input" name="query" type="search" value="经济预测" autocomplete="off">
+          </label>
+          <label class="field wide-field">
+            <span>arXiv 高级查询</span>
+            <input id="arxiv-query-input" name="arxivQuery" type="text" placeholder='all:"economic forecasting"'>
+          </label>
+          <label class="field">
+            <span>每源数量</span>
+            <input id="max-results-input" name="maxResults" type="number" min="1" max="50" value="20">
+          </label>
+          <label class="field">
+            <span>排序</span>
+            <select id="arxiv-sort-input" name="arxivSortBy">
+              <option value="submittedDate">提交时间</option>
+              <option value="lastUpdatedDate">更新时间</option>
+              <option value="relevance">相关性</option>
+            </select>
+          </label>
+          <fieldset class="sources-field">
+            <legend>来源</legend>
+            <label><input type="checkbox" name="sources" value="openalex" checked> OpenAlex</label>
+            <label><input type="checkbox" name="sources" value="arxiv" checked> arXiv</label>
+            <label><input type="checkbox" name="sources" value="crossref"> Crossref</label>
+            <label><input type="checkbox" name="sources" value="pubmed"> PubMed</label>
+            <label><input type="checkbox" name="sources" value="hf"> HF Daily</label>
+            <label><input type="checkbox" name="sources" value="core"> CORE</label>
+            <label><input type="checkbox" name="sources" value="semantic"> Semantic Scholar</label>
+          </fieldset>
+          <div class="form-actions">
+            <button class="primary-button" type="submit">刷新</button>
+            <button class="ghost-button" id="clear-search" type="button">清空</button>
+          </div>
+        </form>
+        <div class="status-line" id="status-line">准备就绪</div>
+      </section>
+
+      <section class="results-panel view-panel active" data-view-panel="search">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Library</p>
+            <h2>检索结果</h2>
+          </div>
+          <div class="filter-tabs" aria-label="筛选">
+            <button class="filter-tab active" type="button" data-filter="all">全部</button>
+            <button class="filter-tab" type="button" data-filter="recommended">推荐</button>
+            <button class="filter-tab" type="button" data-filter="pdf">PDF</button>
+          </div>
+        </div>
+        <div class="list-tools">
+          <label class="field inline-field">
+            <span>本页过滤</span>
+            <input id="local-filter-input" type="search" placeholder="标题、作者、关键词">
+          </label>
+          <div class="count-pill" id="paper-count">0 篇</div>
+        </div>
+        <div class="paper-list" id="paper-list"></div>
+      </section>
+
+      <section class="results-panel view-panel" data-view-panel="favorites">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Saved</p>
+            <h2>收藏文献</h2>
+          </div>
+          <button class="ghost-button" id="export-favorites" type="button">导出</button>
+        </div>
+        <div class="paper-list" id="favorite-list"></div>
+      </section>
+
+      <section class="results-panel view-panel" data-view-panel="reports">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Reports</p>
+            <h2>阅读报告</h2>
+          </div>
+          <div class="filter-tabs" aria-label="报告类型">
+            <button class="report-tab active" type="button" data-report="daily">日报</button>
+            <button class="report-tab" type="button" data-report="annual">年度</button>
+            <button class="report-tab" type="button" data-report="roadmap">路线图</button>
+          </div>
+        </div>
+        <div class="report-actions">
+          <button class="primary-button" id="build-report" type="button">生成</button>
+          <button class="ghost-button" id="copy-report" type="button">复制</button>
+          <button class="ghost-button" id="download-report" type="button">下载 Markdown</button>
+        </div>
+        <textarea id="report-output" class="report-output" spellcheck="false"></textarea>
+      </section>
+
+      <section class="results-panel view-panel" data-view-panel="settings">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">Profile</p>
+            <h2>个人偏好</h2>
+          </div>
+          <button class="primary-button" id="save-settings" type="button">保存</button>
+        </div>
+        <div class="settings-grid">
+          <label class="field">
+            <span>方向名称</span>
+            <input id="profile-name-input" type="text" value="我的研究方向">
+          </label>
+          <label class="field">
+            <span>关键词</span>
+            <textarea id="include-keywords-input" rows="5"></textarea>
+          </label>
+          <label class="field">
+            <span>排除词</span>
+            <textarea id="exclude-keywords-input" rows="5"></textarea>
+          </label>
+          <div class="key-status" id="key-status"></div>
+          <div class="data-actions">
+            <button class="ghost-button" id="export-data" type="button">导出数据</button>
+            <label class="file-button">
+              导入数据
+              <input id="import-data" type="file" accept="application/json">
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <aside class="reader-panel" id="reader-panel">
+        <div class="reader-empty">
+          <p class="eyebrow">Reader</p>
+          <h2>选择一篇论文</h2>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <template id="paper-card-template">
+    <article class="paper-card">
+      <div class="paper-main">
+        <div class="paper-meta"></div>
+        <h3></h3>
+        <p class="paper-authors"></p>
+        <p class="paper-summary"></p>
+        <div class="paper-tags"></div>
+      </div>
+      <div class="paper-actions">
+        <button class="icon-button favorite-button" type="button" title="收藏" aria-label="收藏">☆</button>
+        <a class="mini-link pdf-link" target="_blank" rel="noreferrer">PDF</a>
+        <a class="mini-link source-link" target="_blank" rel="noreferrer">原文</a>
+      </div>
+    </article>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>

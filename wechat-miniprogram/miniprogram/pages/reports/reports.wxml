@@ -1,0 +1,59 @@
+<view class="page">
+  <view class="between header">
+    <view>
+      <text class="eyebrow">Research Radar</text>
+      <text class="title">报告</text>
+    </view>
+    <button class="primary-btn" bindtap="copyMarkdown">复制</button>
+  </view>
+
+  <view class="summary-grid">
+    <view class="stat">
+      <text>文献库</text>
+      <strong>{{library.length}}</strong>
+    </view>
+    <view class="stat">
+      <text>高分</text>
+      <strong>{{top.length}}</strong>
+    </view>
+    <view class="stat">
+      <text>年份</text>
+      <strong>{{years.length}}</strong>
+    </view>
+  </view>
+
+  <view class="segmented">
+    <button class="seg {{activeReport === 'daily' ? 'on' : ''}}" data-report="daily" bindtap="switchReport">日报</button>
+    <button class="seg {{activeReport === 'annual' ? 'on' : ''}}" data-report="annual" bindtap="switchReport">年度</button>
+    <button class="seg {{activeReport === 'roadmap' ? 'on' : ''}}" data-report="roadmap" bindtap="switchReport">地图</button>
+  </view>
+
+  <view wx:if="{{activeReport !== 'roadmap'}}" class="section">
+    <text class="section-title">{{activeReport === 'daily' ? 'Markdown 日报' : 'Markdown 年度概览'}}</text>
+    <text class="markdown">{{markdown}}</text>
+  </view>
+
+  <view wx:else class="section">
+    <text class="section-title">{{roadmap.profile.name}}</text>
+    <text class="desc">{{roadmap.profile.description}}</text>
+    <view class="branch" wx:for="{{roadmap.branches}}" wx:key="keyword">
+      <text class="branch-title">{{item.keyword}}</text>
+      <view class="mini-paper" wx:for="{{item.papers}}" wx:for-item="paper" wx:key="id" data-id="{{paper.id}}" bindtap="openPaper">
+        <text>{{paper.title}}</text>
+        <text class="muted">{{paper.rating}}★ · {{paper.relevanceScore}}</text>
+      </view>
+    </view>
+    <view class="branch">
+      <text class="branch-title">下一步</text>
+      <text class="desc" wx:for="{{roadmap.nextSteps}}" wx:key="*this">{{item}}</text>
+    </view>
+  </view>
+
+  <view class="section" wx:if="{{top.length}}">
+    <text class="section-title">高分论文</text>
+    <view class="paper-row" wx:for="{{top}}" wx:key="id" data-id="{{item.id}}" bindtap="openPaper">
+      <text>{{item.title}}</text>
+      <text class="muted">{{item.rating}}★ · {{item.sourceLabel}}</text>
+    </view>
+  </view>
+</view>

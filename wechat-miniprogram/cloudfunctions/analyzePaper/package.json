@@ -1,0 +1,7 @@
+{
+  "name": "analyze-paper",
+  "version": "1.0.0",
+  "description": "DeepSeek paper analysis cloud function",
+  "main": "index.js",
+  "license": "MIT"
+}

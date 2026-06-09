@@ -1,0 +1,58 @@
+.header {
+  margin-bottom: 28rpx;
+}
+
+.paper-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.paper-card {
+  padding: 22rpx;
+  border: 1px solid #e0d7c8;
+  border-radius: 8px;
+  background: #fffaf0;
+}
+
+.paper-meta {
+  margin-bottom: 12rpx;
+}
+
+.meta-left {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10rpx;
+}
+
+.date {
+  color: #68736d;
+  font-size: 22rpx;
+}
+
+.fav {
+  min-width: 78rpx;
+  min-height: 46rpx;
+  padding: 10rpx 12rpx;
+  color: #fffaf0;
+  font-size: 22rpx;
+  font-weight: 700;
+  background: #c4563f;
+}
+
+.paper-title {
+  display: block;
+  color: #13231b;
+  font-size: 31rpx;
+  font-weight: 760;
+  line-height: 1.32;
+}
+
+.summary {
+  display: block;
+  margin-top: 12rpx;
+  color: #33433b;
+  font-size: 26rpx;
+  line-height: 1.48;
+}

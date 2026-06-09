@@ -1,0 +1,63 @@
+<view class="page">
+  <view wx:if="{{paper}}" class="detail">
+    <view class="top">
+      <view class="meta-line">
+        <text class="pill source-{{paper.source}}">{{paper.sourceLabel}}</text>
+        <text class="date">{{paper.dateText}}</text>
+        <text wx:if="{{paper.relevanceScore !== undefined}}" class="score">{{paper.rating}}★ {{paper.relevanceScore}}</text>
+      </view>
+      <text class="detail-title">{{paper.title}}</text>
+      <text class="authors" wx:if="{{paper.authors}}">{{paper.authors}}</text>
+    </view>
+
+    <view class="actions">
+      <button class="primary-btn" loading="{{analyzing}}" bindtap="analyze">解读</button>
+      <button class="quiet-btn" bindtap="toggleFavorite">{{favorite ? '已收藏' : '收藏'}}</button>
+      <button class="quiet-btn" data-url="{{paper.url}}" bindtap="copyLink">原文</button>
+      <button class="quiet-btn" data-url="{{paper.pdfUrl}}" bindtap="copyLink">PDF</button>
+      <button wx:if="{{paper.codeUrl}}" class="quiet-btn" data-url="{{paper.codeUrl}}" bindtap="copyLink">代码</button>
+    </view>
+
+    <image wx:if="{{paper.thumbnail}}" class="cover" mode="aspectFill" src="{{paper.thumbnail}}"></image>
+
+    <view class="section">
+      <view class="section-head">
+        <text>摘要</text>
+      </view>
+      <text class="paragraph">{{paper.summary}}</text>
+    </view>
+
+    <view class="section" wx:if="{{paper.tags.length}}">
+      <view class="section-head">
+        <text>关键词</text>
+      </view>
+      <view class="tags">
+        <text class="tag" wx:for="{{paper.tags}}" wx:key="*this">{{item}}</text>
+      </view>
+    </view>
+
+    <view class="section" wx:if="{{paper.keywordHits && paper.keywordHits.length}}">
+      <view class="section-head">
+        <text>命中画像</text>
+      </view>
+      <view class="tags">
+        <text class="hit" wx:for="{{paper.keywordHits}}" wx:key="*this">{{item}}</text>
+      </view>
+    </view>
+
+    <view class="section">
+      <view class="between section-head">
+        <text>中文解读</text>
+        <text class="muted mini" wx:if="{{analysis}}">已生成</text>
+      </view>
+      <text class="analysis" wx:if="{{analysis}}">{{analysis}}</text>
+      <view class="analysis-empty" wx:else>
+        <text>暂无解读</text>
+      </view>
+    </view>
+  </view>
+
+  <view class="empty" wx:else>
+    <text>没有选中的论文</text>
+  </view>
+</view>

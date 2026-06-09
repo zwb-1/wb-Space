@@ -1,0 +1,92 @@
+<view class="page">
+  <view class="header">
+    <text class="eyebrow">Preferences</text>
+    <text class="title">设置</text>
+  </view>
+
+  <view class="section">
+    <text class="label block">文献来源</text>
+    <view class="between field">
+      <text class="label">Hugging Face Daily</text>
+      <switch checked="{{settings.useHuggingFace}}" color="#126b5b" data-key="useHuggingFace" bindchange="onSwitchChange" />
+    </view>
+    <view class="between field">
+      <text class="label">ArXiv</text>
+      <switch checked="{{settings.useArxiv}}" color="#126b5b" data-key="useArxiv" bindchange="onSwitchChange" />
+    </view>
+    <view class="between field">
+      <text class="label">OpenAlex</text>
+      <switch checked="{{settings.useOpenAlex}}" color="#126b5b" data-key="useOpenAlex" bindchange="onSwitchChange" />
+    </view>
+    <view class="between field">
+      <text class="label">Crossref</text>
+      <switch checked="{{settings.useCrossref}}" color="#126b5b" data-key="useCrossref" bindchange="onSwitchChange" />
+    </view>
+    <view class="between field">
+      <text class="label">PubMed / PMC</text>
+      <switch checked="{{settings.usePubMed}}" color="#126b5b" data-key="usePubMed" bindchange="onSwitchChange" />
+    </view>
+    <view class="between field">
+      <view>
+        <text class="label">CORE</text>
+        <text class="hint">需要云函数 CORE_API_KEY</text>
+      </view>
+      <switch checked="{{settings.useCore}}" color="#126b5b" data-key="useCore" bindchange="onSwitchChange" />
+    </view>
+    <view class="between field">
+      <view>
+        <text class="label">Semantic Scholar</text>
+        <text class="hint">需要云函数 SEMANTIC_SCHOLAR_API_KEY</text>
+      </view>
+      <switch checked="{{settings.useSemanticScholar}}" color="#126b5b" data-key="useSemanticScholar" bindchange="onSwitchChange" />
+    </view>
+  </view>
+
+  <view class="section">
+    <view class="between field">
+      <text class="label">每个来源数量</text>
+      <text class="value">{{settings.maxResults}}</text>
+    </view>
+    <slider min="5" max="50" step="5" value="{{settings.maxResults}}" activeColor="#126b5b" backgroundColor="#e4dacb" bindchange="onMaxChange" />
+  </view>
+
+  <view class="section">
+    <text class="label block">通用检索词</text>
+    <textarea value="{{literatureQueryDraft}}" maxlength="180" auto-height bindinput="onLiteratureQueryInput" />
+    <text class="hint">用于 OpenAlex、Crossref、PubMed、CORE、Semantic Scholar</text>
+  </view>
+
+  <view class="section">
+    <text class="label block">ArXiv 查询</text>
+    <textarea value="{{arxivQueryDraft}}" maxlength="260" auto-height bindinput="onArxivQueryInput" />
+    <view class="actions">
+      <button class="primary-btn" bindtap="saveQueries">保存</button>
+      <button class="quiet-btn" bindtap="resetQueries">重置</button>
+    </view>
+  </view>
+
+  <view class="section">
+    <text class="label block">研究画像</text>
+    <input class="text-input" value="{{profileNameDraft}}" data-key="profileNameDraft" placeholder="方向名称" bindinput="onProfileInput" />
+    <textarea value="{{profileDescDraft}}" maxlength="180" auto-height data-key="profileDescDraft" placeholder="方向描述" bindinput="onProfileInput" />
+    <text class="hint section-hint">核心关键词，每行一个</text>
+    <textarea value="{{includeKeywordsDraft}}" maxlength="600" auto-height data-key="includeKeywordsDraft" bindinput="onProfileInput" />
+    <text class="hint section-hint">必须命中词，每行一个</text>
+    <textarea value="{{mustHaveDraft}}" maxlength="420" auto-height data-key="mustHaveDraft" bindinput="onProfileInput" />
+    <text class="hint section-hint">排除词，每行一个</text>
+    <textarea value="{{excludeKeywordsDraft}}" maxlength="420" auto-height data-key="excludeKeywordsDraft" bindinput="onProfileInput" />
+    <text class="hint section-hint">研究重点，每行一个</text>
+    <textarea value="{{researchFocusDraft}}" maxlength="520" auto-height data-key="researchFocusDraft" bindinput="onProfileInput" />
+    <view class="actions">
+      <button class="primary-btn" bindtap="saveProfile">保存画像</button>
+      <button class="quiet-btn" bindtap="resetProfile">默认画像</button>
+    </view>
+  </view>
+
+  <view class="section">
+    <text class="label block">云函数</text>
+    <view class="cloud-state {{cloudReady ? 'ready' : ''}}">
+      <text>{{cloudReady ? '云函数已初始化' : '离线速读模式'}}</text>
+    </view>
+  </view>
+</view>
